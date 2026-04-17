@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test init-node clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -22,6 +22,9 @@ help:
 	@echo "  go-build         Build the 0aid binary"
 	@echo "  go-test          Run Go unit tests"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
+	@echo "  collect-validator Normalize a node bundle into a collected manifest"
+	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
+	@echo "  assemble-localnet Render a reproducible localnet bundle from collected manifests"
 	@echo "  clean            Remove generated localnet artifacts"
 	@echo ""
 
@@ -70,6 +73,20 @@ go-test:
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
 	./0aid init-node --root . --id $(ID) --out ./build/nodes/$(ID)
+
+collect-validator:
+	@test -n "$(BUNDLE)" || (echo "Usage: make collect-validator BUNDLE=build/nodes/val-1 OUT=build/collection/val-1.json" && exit 1)
+	@test -n "$(OUT)" || (echo "Usage: make collect-validator BUNDLE=build/nodes/val-1 OUT=build/collection/val-1.json" && exit 1)
+	./0aid collect-validator --bundle $(BUNDLE) --out $(OUT)
+
+assemble-genesis:
+	@test -n "$(COLLECTION)" || (echo "Usage: make assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json" && exit 1)
+	./0aid assemble-genesis --root . --collection $(COLLECTION) $(if $(OUT),--out $(OUT),)
+
+assemble-localnet:
+	@test -n "$(COLLECTION)" || (echo "Usage: make assemble-localnet COLLECTION=build/collection OUT=build/assembled" && exit 1)
+	@test -n "$(OUT)" || (echo "Usage: make assemble-localnet COLLECTION=build/collection OUT=build/assembled" && exit 1)
+	./0aid assemble-localnet --root . --collection $(COLLECTION) --out $(OUT)
 
 clean:
 	rm -rf build/localnet .cache 0aid

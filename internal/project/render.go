@@ -65,6 +65,22 @@ func NetworkPlan(bundle Bundle) Plan {
 	}
 }
 
+func NetworkSummary(bundle Bundle) map[string]any {
+	return map[string]any{
+		"network_name":    bundle.Topology.NetworkName,
+		"chain_id":        bundle.Topology.ChainID,
+		"mode":            bundle.Topology.Mode,
+		"validator_count": len(bundle.Topology.Validators),
+		"seed_count":      len(bundle.Topology.SeedNodes),
+		"validators":      validatorNames(bundle.Topology.Validators),
+		"seed_nodes":      seedNames(bundle.Topology.SeedNodes),
+		"governance": map[string]any{
+			"houses":                                 bundle.Topology.Governance.Houses,
+			"critical_actions_require_dual_approval": bundle.Topology.Governance.CriticalActionsRequireDual,
+		},
+	}
+}
+
 func RenderedGenesis(bundle Bundle) map[string]any {
 	rendered := map[string]any{
 		"chain_id":    bundle.Genesis.ChainID,
@@ -75,23 +91,23 @@ func RenderedGenesis(bundle Bundle) map[string]any {
 			"reputation": bundle.Genesis.Denoms.Reputation,
 		},
 		"staking": map[string]any{
-			"minimum_self_bond":     bundle.Genesis.Staking.MinimumSelfBond,
+			"minimum_self_bond":      bundle.Genesis.Staking.MinimumSelfBond,
 			"unbonding_time_seconds": bundle.Genesis.Staking.UnbondingTimeSec,
-			"max_validators":        bundle.Genesis.Staking.MaxValidators,
+			"max_validators":         bundle.Genesis.Staking.MaxValidators,
 		},
 		"governance": map[string]any{
-			"proposal_bond":                  bundle.Genesis.Governance.ProposalBond,
-			"standard_voting_period_seconds": bundle.Genesis.Governance.StandardVotingPeriodSec,
-			"high_impact_timelock_seconds":   bundle.Genesis.Governance.HighImpactTimelockSec,
+			"proposal_bond":                    bundle.Genesis.Governance.ProposalBond,
+			"standard_voting_period_seconds":   bundle.Genesis.Governance.StandardVotingPeriodSec,
+			"high_impact_timelock_seconds":     bundle.Genesis.Governance.HighImpactTimelockSec,
 			"safety_critical_timelock_seconds": bundle.Genesis.Governance.SafetyCriticalSec,
-			"dual_house_enabled":             bundle.Genesis.Governance.DualHouseEnabled,
+			"dual_house_enabled":               bundle.Genesis.Governance.DualHouseEnabled,
 		},
 		"attestation": map[string]any{
-			"minimum_auditor_bond": bundle.Genesis.Attest.MinimumAuditorBond,
+			"minimum_auditor_bond":  bundle.Genesis.Attest.MinimumAuditorBond,
 			"appeal_window_seconds": bundle.Genesis.Attest.AppealWindowSec,
 		},
 		"incident": map[string]any{
-			"postmortem_deadline_seconds": bundle.Genesis.Incident.PostmortemDeadlineSec,
+			"postmortem_deadline_seconds":  bundle.Genesis.Incident.PostmortemDeadlineSec,
 			"public_reason_codes_required": bundle.Genesis.Incident.PublicReasonCodes,
 		},
 		"treasury": map[string]any{
