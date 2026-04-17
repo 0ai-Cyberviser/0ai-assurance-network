@@ -602,3 +602,157 @@ func TestSignerRotationVerifyFailsOnPolicyDrift(t *testing.T) {
 		t.Fatalf("expected applied policy drift error, got %v", err)
 	}
 }
+
+func mustSignerRotationApplyResult(t *testing.T, bundle Bundle) SignerRotationApplyResult {
+	t.Helper()
+
+	plan := mustSignerRotationActivationPlan(t, bundle)
+	result, err := SignerRotationApply(bundle, SignerRotationApplyRequest{
+		ActivationPlan: plan,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationApply failed: %v", err)
+	}
+	return result
+}
+
+func mustSignerRotationVerificationReceipt(t *testing.T, bundle Bundle) SignerRotationVerificationReceipt {
+	t.Helper()
+
+	plan := mustSignerRotationActivationPlan(t, bundle)
+	applied := mustSignerRotationApplyResult(t, bundle)
+	receipt, err := SignerRotationVerify(bundle, SignerRotationVerifyRequest{
+		ActivationPlan: plan,
+		Policy:         applied.AppliedPolicy,
+		VerifiedAt:     "2026-04-24T00:15:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationVerify failed: %v", err)
+	}
+	return receipt
+}
+
+func TestSignerRotationActivationAuditAppend(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	appendResult, err := SignerRotationActivationAuditAppend(SignerRotationActivationAuditAppendRequest{
+		ApplyResult:         mustSignerRotationApplyResult(t, bundle),
+		VerificationReceipt: mustSignerRotationVerificationReceipt(t, bundle),
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditAppend failed: %v", err)
+	}
+	if appendResult.Status != "appended" {
+		t.Fatalf("unexpected append status: %s", appendResult.Status)
+	}
+	if appendResult.AppendedIndex != 0 {
+		t.Fatalf("unexpected appended index: %d", appendResult.AppendedIndex)
+	}
+	if appendResult.Ledger.EntryCount != 1 || len(appendResult.Ledger.Entries) != 1 {
+		t.Fatalf("expected one ledger entry, got %+v", appendResult.Ledger)
+	}
+	if appendResult.AppendedEntry.ReceiptID != "rotation-governance-chair-bot-20260424t000000z" {
+		t.Fatalf("unexpected appended receipt id: %s", appendResult.AppendedEntry.ReceiptID)
+	}
+}
+
+func TestSignerRotationActivationAuditAppendFailsOnDigestMismatch(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applyResult := mustSignerRotationApplyResult(t, bundle)
+	verification := mustSignerRotationVerificationReceipt(t, bundle)
+	verification.PolicyDigest = "deadbeef"
+	_, err = SignerRotationActivationAuditAppend(SignerRotationActivationAuditAppendRequest{
+		ApplyResult:         applyResult,
+		VerificationReceipt: verification,
+	})
+	if err == nil || !strings.Contains(err.Error(), "activation audit policy_digest mismatch") {
+		t.Fatalf("expected activation audit digest mismatch error, got %v", err)
+	}
+}
+
+func TestSignerRotationActivationAuditAppendFailsOnDuplicateReceipt(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applyResult := mustSignerRotationApplyResult(t, bundle)
+	verification := mustSignerRotationVerificationReceipt(t, bundle)
+	existing := SignerRotationActivationAuditLedger{
+		Version:    "1.0.0",
+		Status:     "active",
+		ChainID:    applyResult.ChainID,
+		PolicyPath: applyResult.PolicyPath,
+		Entries: []SignerRotationActivationAuditEntry{
+			activationAuditEntry(applyResult, verification),
+		},
+		EntryCount: 1,
+	}
+	_, err = SignerRotationActivationAuditAppend(SignerRotationActivationAuditAppendRequest{
+		ApplyResult:         applyResult,
+		VerificationReceipt: verification,
+		ExistingLedger:      existing,
+	})
+	if err == nil || !strings.Contains(err.Error(), "activation audit receipt_id already recorded") {
+		t.Fatalf("expected duplicate receipt error, got %v", err)
+	}
+}
+
+func TestSignerRotationActivationAuditAppendFailsOnOutOfOrderVerification(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applyResult := mustSignerRotationApplyResult(t, bundle)
+	verification := mustSignerRotationVerificationReceipt(t, bundle)
+	existing := SignerRotationActivationAuditLedger{
+		Version:    "1.0.0",
+		Status:     "active",
+		ChainID:    applyResult.ChainID,
+		PolicyPath: applyResult.PolicyPath,
+		Entries: []SignerRotationActivationAuditEntry{
+			{
+				Version:              "1.0.0",
+				Status:               "verified",
+				ReceiptID:            "rotation-older-20260423t000000z",
+				ChainID:              applyResult.ChainID,
+				PolicyPath:           applyResult.PolicyPath,
+				TargetPolicyVersion:  "checkpoint-signers-older",
+				EffectiveAt:          "2026-04-23T23:59:00Z",
+				VerifiedAt:           "2026-04-24T00:16:00Z",
+				ActivationPlanDigest: "older-plan",
+				AppliedPolicyDigest:  "older-policy",
+				SignerID:             "governance-chair-bot-v2",
+				KeyID:                "governance-chair-dev-v2",
+				ActorID:              "op-governance-chair-1",
+				ActorDisplayName:     "Governance Chair 1",
+				OrganizationID:       "org-0ai-core",
+				OrganizationName:     "0AI Core",
+				Signature: SignerRotationVerificationSignature{
+					Format:      "0ai-hmac-sha256-v1",
+					SignatureID: "older-signature",
+					SignedAt:    "2026-04-24T00:16:00Z",
+					ExpiresAt:   "2026-04-25T00:16:00Z",
+					Value:       "older-value",
+				},
+			},
+		},
+		EntryCount: 1,
+	}
+	_, err = SignerRotationActivationAuditAppend(SignerRotationActivationAuditAppendRequest{
+		ApplyResult:         applyResult,
+		VerificationReceipt: verification,
+		ExistingLedger:      existing,
+	})
+	if err == nil || !strings.Contains(err.Error(), "activation audit verified_at must be strictly increasing") {
+		t.Fatalf("expected out-of-order verification error, got %v", err)
+	}
+}
