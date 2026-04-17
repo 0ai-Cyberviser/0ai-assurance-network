@@ -284,6 +284,36 @@ Ledger append fails closed when:
 - the new record would move `effective_at` or `verified_at` backward
 - an existing ledger entry is already malformed
 
+## Ledger reconciliation
+
+`0aid signer-rotation-ledger-reconcile` compares the activation audit ledger
+against a current checkpoint signer policy and reports whether the active policy
+is fully explained by the recorded ledger lineage.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-reconcile \
+  --ledger ./build/rotation/activation-audit-ledger.json \
+  --policy ./build/rotation/governance-chair-applied-policy.json \
+  --out ./build/rotation/governance-chair-ledger-reconcile.json
+```
+
+The reconciliation report includes:
+
+- the current policy version and digest
+- the latest recorded receipt id, target policy version, and applied policy digest
+- whether the current policy is explained by the ledger
+- continuity issues such as missing coverage, duplicates, or lineage mismatch
+
+Reconciliation surfaces gaps when:
+
+- the ledger is empty but the current policy already appears rotated
+- the latest recorded target policy version does not match the current policy
+- the latest recorded applied policy digest does not match the current policy
+- duplicate receipt ids, target policy versions, or signature ids exist in the ledger
+- `effective_at` or `verified_at` ordering is not strictly increasing across entries
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -302,3 +332,5 @@ Ledger append fails closed when:
     signer set became active exactly as planned.
 11. Append the apply + verification outputs into the activation audit ledger so
     the signer lineage stays append-only and reviewable over time.
+12. Reconcile the current checkpoint signer policy against that ledger before
+    treating the rotation lineage as continuous and complete.

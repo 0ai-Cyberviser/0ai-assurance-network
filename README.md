@@ -83,6 +83,7 @@ make -C projects/0ai-assurance-network signer-rotation-activate BUNDLE=build/rot
 make -C projects/0ai-assurance-network signer-rotation-apply PLAN=build/rotation/governance-chair-activation-plan.json POLICY_OUT=build/rotation/governance-chair-applied-policy.json
 make -C projects/0ai-assurance-network signer-rotation-verify PLAN=build/rotation/governance-chair-activation-plan.json POLICY=build/rotation/governance-chair-applied-policy.json VERIFIED_AT=2026-04-24T00:15:00Z
 make -C projects/0ai-assurance-network signer-rotation-ledger-append APPLY=build/rotation/governance-chair-apply-result.json VERIFICATION=build/rotation/governance-chair-verification.json LEDGER_OUT=build/rotation/activation-audit-ledger.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-reconcile LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -230,6 +231,12 @@ policy digests, duplicate receipt IDs, duplicate target policy versions,
 replayed verification signatures, and non-monotonic effective or verified
 timestamps.
 
+`signer-rotation-ledger-reconcile` reads the activation audit ledger against a
+current checkpoint signer policy and reports whether the active policy can be
+explained by the latest recorded activation. It surfaces missing ledger
+coverage, duplicate continuity records, and any current policy version or
+digest that no longer matches the recorded ledger lineage.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -249,6 +256,7 @@ currently supports:
 - `signer-rotation-apply`
 - `signer-rotation-verify`
 - `signer-rotation-ledger-append`
+- `signer-rotation-ledger-reconcile`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
@@ -299,6 +307,10 @@ Bootstrap examples:
   --verification ./build/rotation/governance-chair-verification.json \
   --ledger-out ./build/rotation/activation-audit-ledger.json \
   --out ./build/rotation/governance-chair-ledger-append.json
+./0aid signer-rotation-ledger-reconcile \
+  --ledger ./build/rotation/activation-audit-ledger.json \
+  --policy ./build/rotation/governance-chair-applied-policy.json \
+  --out ./build/rotation/governance-chair-ledger-reconcile.json
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
 ./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
 ./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json

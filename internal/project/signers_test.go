@@ -756,3 +756,99 @@ func TestSignerRotationActivationAuditAppendFailsOnOutOfOrderVerification(t *tes
 		t.Fatalf("expected out-of-order verification error, got %v", err)
 	}
 }
+
+func mustSignerRotationActivationAuditLedger(t *testing.T, bundle Bundle) SignerRotationActivationAuditLedger {
+	t.Helper()
+
+	appendResult, err := SignerRotationActivationAuditAppend(SignerRotationActivationAuditAppendRequest{
+		ApplyResult:         mustSignerRotationApplyResult(t, bundle),
+		VerificationReceipt: mustSignerRotationVerificationReceipt(t, bundle),
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditAppend failed: %v", err)
+	}
+	return appendResult.Ledger
+}
+
+func TestSignerRotationActivationAuditReconcile(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applied := mustSignerRotationApplyResult(t, bundle)
+	ledger := mustSignerRotationActivationAuditLedger(t, bundle)
+	report, err := SignerRotationActivationAuditReconcile(SignerRotationActivationAuditReconcileRequest{
+		Ledger:     ledger,
+		Policy:     applied.AppliedPolicy,
+		PolicyPath: "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditReconcile failed: %v", err)
+	}
+	if report.Status != "consistent" {
+		t.Fatalf("unexpected reconcile status: %s", report.Status)
+	}
+	if !report.CurrentPolicyExplained {
+		t.Fatalf("expected current policy to be explained")
+	}
+	if len(report.Issues) != 0 {
+		t.Fatalf("expected no reconciliation issues, got %+v", report.Issues)
+	}
+}
+
+func TestSignerRotationActivationAuditReconcileFlagsEmptyLedgerGap(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applied := mustSignerRotationApplyResult(t, bundle)
+	report, err := SignerRotationActivationAuditReconcile(SignerRotationActivationAuditReconcileRequest{
+		Ledger:     SignerRotationActivationAuditLedger{},
+		Policy:     applied.AppliedPolicy,
+		PolicyPath: "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditReconcile failed: %v", err)
+	}
+	if report.Status != "gap" {
+		t.Fatalf("unexpected reconcile status: %s", report.Status)
+	}
+	if report.CurrentPolicyExplained {
+		t.Fatalf("expected unexplained current policy for empty ledger")
+	}
+	if len(report.Issues) == 0 || !strings.Contains(report.Issues[0], "activation audit ledger is empty") {
+		t.Fatalf("expected empty-ledger issue, got %+v", report.Issues)
+	}
+}
+
+func TestSignerRotationActivationAuditReconcileFlagsCurrentPolicyMismatch(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	ledger := mustSignerRotationActivationAuditLedger(t, bundle)
+	currentPolicy, err := currentSignerPolicy(bundle)
+	if err != nil {
+		t.Fatalf("currentSignerPolicy failed: %v", err)
+	}
+	report, err := SignerRotationActivationAuditReconcile(SignerRotationActivationAuditReconcileRequest{
+		Ledger:     ledger,
+		Policy:     currentPolicy,
+		PolicyPath: "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditReconcile failed: %v", err)
+	}
+	if report.Status != "gap" {
+		t.Fatalf("unexpected reconcile status: %s", report.Status)
+	}
+	if report.CurrentPolicyExplained {
+		t.Fatalf("expected current policy mismatch to remain unexplained")
+	}
+	if len(report.Issues) == 0 {
+		t.Fatalf("expected reconciliation issues for current policy mismatch")
+	}
+}

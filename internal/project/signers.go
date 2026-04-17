@@ -334,6 +334,27 @@ type SignerRotationActivationAuditAppendResult struct {
 	Ledger        SignerRotationActivationAuditLedger `json:"ledger"`
 }
 
+type SignerRotationActivationAuditReconcileRequest struct {
+	Ledger     SignerRotationActivationAuditLedger
+	Policy     CheckpointSignerPolicyOutput
+	PolicyPath string
+}
+
+type SignerRotationActivationAuditReconcileReport struct {
+	Version                string   `json:"version"`
+	Status                 string   `json:"status"`
+	ChainID                string   `json:"chain_id"`
+	PolicyPath             string   `json:"policy_path"`
+	CurrentPolicyVersion   string   `json:"current_policy_version"`
+	CurrentPolicyDigest    string   `json:"current_policy_digest"`
+	EntryCount             int      `json:"entry_count"`
+	LatestReceiptID        string   `json:"latest_receipt_id,omitempty"`
+	LatestTargetVersion    string   `json:"latest_target_policy_version,omitempty"`
+	LatestPolicyDigest     string   `json:"latest_applied_policy_digest,omitempty"`
+	CurrentPolicyExplained bool     `json:"current_policy_explained"`
+	Issues                 []string `json:"issues"`
+}
+
 type parsedSignerEntry struct {
 	ActorID           string
 	SignerID          string
@@ -2119,6 +2140,135 @@ func SignerRotationActivationAuditAppend(
 		AppendedEntry: entry,
 		Ledger:        ledger,
 	}, nil
+}
+
+func SignerRotationActivationAuditReconcile(
+	request SignerRotationActivationAuditReconcileRequest,
+) (SignerRotationActivationAuditReconcileReport, error) {
+	policyDigest, err := checkpointSignerPolicyDigest(request.Policy)
+	if err != nil {
+		return SignerRotationActivationAuditReconcileReport{}, err
+	}
+	policyPath := strings.TrimSpace(request.PolicyPath)
+	if policyPath == "" {
+		policyPath = request.Ledger.PolicyPath
+	}
+	report := SignerRotationActivationAuditReconcileReport{
+		Version:                "1.0.0",
+		Status:                 "consistent",
+		ChainID:                request.Policy.Version,
+		PolicyPath:             policyPath,
+		CurrentPolicyVersion:   request.Policy.Version,
+		CurrentPolicyDigest:    policyDigest,
+		EntryCount:             len(request.Ledger.Entries),
+		CurrentPolicyExplained: false,
+		Issues:                 []string{},
+	}
+	if request.Policy.Version == "" {
+		return SignerRotationActivationAuditReconcileReport{}, fmt.Errorf("reconciliation policy version must be set")
+	}
+	report.ChainID = ""
+	if len(request.Ledger.Entries) > 0 {
+		report.ChainID = request.Ledger.Entries[0].ChainID
+	}
+	if report.ChainID == "" {
+		report.ChainID = request.Ledger.ChainID
+	}
+	if report.ChainID == "" {
+		report.ChainID = "unknown"
+	}
+	if request.Ledger.Version != "" && request.Ledger.Version != "1.0.0" {
+		report.Issues = append(report.Issues, fmt.Sprintf("unexpected activation audit ledger version: %s", request.Ledger.Version))
+	}
+	if request.Ledger.ChainID != "" && request.Ledger.ChainID != report.ChainID {
+		report.Issues = append(report.Issues, "activation audit ledger chain_id does not match current policy lineage")
+	}
+	if request.Ledger.PolicyPath != "" && policyPath != "" && request.Ledger.PolicyPath != policyPath {
+		report.Issues = append(report.Issues, "activation audit ledger policy_path does not match reconciliation policy path")
+	}
+	if len(request.Ledger.Entries) == 0 {
+		if strings.Contains(request.Policy.Version, "+rotation-") {
+			report.Issues = append(report.Issues, "current checkpoint signer policy appears rotated but activation audit ledger is empty")
+			report.Status = "gap"
+		} else {
+			report.CurrentPolicyExplained = true
+		}
+		return report, nil
+	}
+
+	seenReceiptIDs := make(map[string]struct{}, len(request.Ledger.Entries))
+	seenTargetVersions := make(map[string]struct{}, len(request.Ledger.Entries))
+	seenSignatureIDs := make(map[string]struct{}, len(request.Ledger.Entries))
+	lastEffectiveAt := time.Time{}
+	lastVerifiedAt := time.Time{}
+	latest := request.Ledger.Entries[len(request.Ledger.Entries)-1]
+	report.LatestReceiptID = latest.ReceiptID
+	report.LatestTargetVersion = latest.TargetPolicyVersion
+	report.LatestPolicyDigest = latest.AppliedPolicyDigest
+
+	for _, entry := range request.Ledger.Entries {
+		if _, exists := seenReceiptIDs[entry.ReceiptID]; exists {
+			report.Issues = append(report.Issues, fmt.Sprintf("duplicate activation audit receipt_id in ledger: %s", entry.ReceiptID))
+		}
+		seenReceiptIDs[entry.ReceiptID] = struct{}{}
+		if _, exists := seenTargetVersions[entry.TargetPolicyVersion]; exists {
+			report.Issues = append(report.Issues, fmt.Sprintf("duplicate activation audit target_policy_version in ledger: %s", entry.TargetPolicyVersion))
+		}
+		seenTargetVersions[entry.TargetPolicyVersion] = struct{}{}
+		if _, exists := seenSignatureIDs[entry.Signature.SignatureID]; exists {
+			report.Issues = append(report.Issues, fmt.Sprintf("duplicate activation audit signature_id in ledger: %s", entry.Signature.SignatureID))
+		}
+		seenSignatureIDs[entry.Signature.SignatureID] = struct{}{}
+		if entry.ChainID != "" && entry.ChainID != report.ChainID {
+			report.Issues = append(report.Issues, fmt.Sprintf("activation audit entry %s chain_id mismatch", entry.ReceiptID))
+		}
+		if policyPath != "" && entry.PolicyPath != "" && entry.PolicyPath != policyPath {
+			report.Issues = append(report.Issues, fmt.Sprintf("activation audit entry %s policy_path mismatch", entry.ReceiptID))
+		}
+		effectiveAt, err := parseRFC3339(entry.EffectiveAt, "activation audit entry effective_at")
+		if err != nil {
+			return SignerRotationActivationAuditReconcileReport{}, err
+		}
+		verifiedAt, err := parseRFC3339(entry.VerifiedAt, "activation audit entry verified_at")
+		if err != nil {
+			return SignerRotationActivationAuditReconcileReport{}, err
+		}
+		if verifiedAt.Before(effectiveAt) {
+			report.Issues = append(report.Issues, fmt.Sprintf("activation audit entry %s verified_at is before effective_at", entry.ReceiptID))
+		}
+		if !lastEffectiveAt.IsZero() && !effectiveAt.After(lastEffectiveAt) {
+			report.Issues = append(report.Issues, "activation audit ledger effective_at is not strictly increasing")
+		}
+		if !lastVerifiedAt.IsZero() && !verifiedAt.After(lastVerifiedAt) {
+			report.Issues = append(report.Issues, "activation audit ledger verified_at is not strictly increasing")
+		}
+		lastEffectiveAt = effectiveAt
+		lastVerifiedAt = verifiedAt
+	}
+
+	if latest.TargetPolicyVersion != request.Policy.Version {
+		report.Issues = append(report.Issues, "current checkpoint signer policy version is not explained by the latest activation audit entry")
+	}
+	if latest.AppliedPolicyDigest != policyDigest {
+		report.Issues = append(report.Issues, "current checkpoint signer policy digest is not explained by the latest activation audit entry")
+	}
+	report.CurrentPolicyExplained = latest.TargetPolicyVersion == request.Policy.Version && latest.AppliedPolicyDigest == policyDigest
+	if !report.CurrentPolicyExplained && strings.Contains(request.Policy.Version, "+rotation-") {
+		report.Issues = append(report.Issues, "current checkpoint signer policy cannot be explained by the activation audit ledger lineage")
+	}
+
+	if len(report.Issues) == 0 {
+		report.Status = "consistent"
+		return report, nil
+	}
+	report.Status = "gap"
+	for _, issue := range report.Issues {
+		if strings.Contains(issue, "duplicate activation audit") || strings.Contains(issue, "not strictly increasing") || strings.Contains(issue, "mismatch") {
+			report.Status = "invalid"
+			break
+		}
+	}
+	return report, nil
 }
 
 func recommendedRotationAction(rotationStatus string) string {
