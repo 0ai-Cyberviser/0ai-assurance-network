@@ -53,6 +53,11 @@ make governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=ex
 make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json
 ```
 
+Every governance command also supports `--artifact-out <path>` so external
+automation can consume a versioned orchestration artifact without scraping CLI
+text. The shared artifact envelope and compatibility rules are documented in
+[orchestration-artifacts.md](orchestration-artifacts.md).
+
 ## Output
 
 The report includes:

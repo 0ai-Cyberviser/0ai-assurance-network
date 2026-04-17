@@ -116,6 +116,11 @@ owner roles, completion criteria, dependency ordering between phases, and
 status-aware rollups for current execution readiness. That keeps the governance
 path operationally useful once the engine detects an unstable cluster.
 
+Each governance command also supports `--artifact-out <path>` so external
+automation can consume a stable, versioned orchestration artifact without
+scraping CLI text. The artifact contract is documented in
+[docs/orchestration-artifacts.md](docs/orchestration-artifacts.md).
+
 `governance-replay` reconstructs deterministic current checkpoint state from an
 append-only event log or a derived snapshot. Event logs are stricter than
 snapshots: each event must include `checkpoint_id`, `previous_status`,
@@ -197,6 +202,10 @@ PYTHONPATH=src python -m assurancectl.cli governance-remediation \
   --registry examples/proposals/registry.json \
   --history examples/proposals/history.json \
   --status examples/proposals/checkpoint-status.json
+PYTHONPATH=src python -m assurancectl.cli governance-remediation \
+  --registry examples/proposals/registry.json \
+  --history examples/proposals/history.json \
+  --artifact-out build/artifacts/governance-remediation.json
 PYTHONPATH=src python -m assurancectl.cli governance-replay \
   --status examples/proposals/checkpoint-events.json
 PYTHONPATH=src python -m assurancectl.cli governance-drift \
