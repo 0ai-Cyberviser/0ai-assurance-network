@@ -314,6 +314,33 @@ Reconciliation surfaces gaps when:
 - duplicate receipt ids, target policy versions, or signature ids exist in the ledger
 - `effective_at` or `verified_at` ordering is not strictly increasing across entries
 
+## Ledger export packages
+
+`0aid signer-rotation-ledger-export` packages the current checkpoint signer
+policy, the activation audit ledger, and the reconciliation report into one
+stable export artifact for offline review or retention.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-export \
+  --ledger ./build/rotation/activation-audit-ledger.json \
+  --policy ./build/rotation/governance-chair-applied-policy.json \
+  --out ./build/rotation/governance-chair-audit-export.json
+```
+
+The export package includes:
+
+- the current checkpoint signer policy and digest
+- the append-only activation audit ledger
+- the reconciliation report
+- a baseline snapshot with the latest ledger lineage, current policy digest,
+  and continuity status
+
+Operators may also pass `--reconcile` to reuse a saved reconciliation report.
+Export still fails closed when that report contradicts the supplied ledger or
+current policy digest.
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -334,3 +361,5 @@ Reconciliation surfaces gaps when:
     the signer lineage stays append-only and reviewable over time.
 12. Reconcile the current checkpoint signer policy against that ledger before
     treating the rotation lineage as continuous and complete.
+13. Export the policy, ledger, and reconciliation state into a stable audit
+    package before archiving the rotation baseline.

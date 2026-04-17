@@ -355,6 +355,41 @@ type SignerRotationActivationAuditReconcileReport struct {
 	Issues                 []string `json:"issues"`
 }
 
+type SignerRotationActivationAuditBaselineSnapshot struct {
+	Version                string                              `json:"version"`
+	Status                 string                              `json:"status"`
+	ChainID                string                              `json:"chain_id"`
+	PolicyPath             string                              `json:"policy_path"`
+	LedgerEntryCount       int                                 `json:"ledger_entry_count"`
+	CurrentPolicyVersion   string                              `json:"current_policy_version"`
+	CurrentPolicyDigest    string                              `json:"current_policy_digest"`
+	CurrentPolicyExplained bool                                `json:"current_policy_explained"`
+	LatestReceiptID        string                              `json:"latest_receipt_id,omitempty"`
+	LatestTargetVersion    string                              `json:"latest_target_policy_version,omitempty"`
+	LatestPolicyDigest     string                              `json:"latest_applied_policy_digest,omitempty"`
+	LatestEntry            *SignerRotationActivationAuditEntry `json:"latest_entry,omitempty"`
+	ReconciliationStatus   string                              `json:"reconciliation_status"`
+	ContinuityIssues       []string                            `json:"continuity_issues"`
+}
+
+type SignerRotationActivationAuditExportRequest struct {
+	Ledger         SignerRotationActivationAuditLedger
+	Policy         CheckpointSignerPolicyOutput
+	Reconciliation SignerRotationActivationAuditReconcileReport
+	PolicyPath     string
+}
+
+type SignerRotationActivationAuditExportPackage struct {
+	Version          string                                        `json:"version"`
+	Status           string                                        `json:"status"`
+	ChainID          string                                        `json:"chain_id"`
+	PolicyPath       string                                        `json:"policy_path"`
+	BaselineSnapshot SignerRotationActivationAuditBaselineSnapshot `json:"baseline_snapshot"`
+	CurrentPolicy    CheckpointSignerPolicyOutput                  `json:"current_policy"`
+	Ledger           SignerRotationActivationAuditLedger           `json:"ledger"`
+	Reconciliation   SignerRotationActivationAuditReconcileReport  `json:"reconciliation"`
+}
+
 type parsedSignerEntry struct {
 	ActorID           string
 	SignerID          string
@@ -2156,7 +2191,7 @@ func SignerRotationActivationAuditReconcile(
 	report := SignerRotationActivationAuditReconcileReport{
 		Version:                "1.0.0",
 		Status:                 "consistent",
-		ChainID:                request.Policy.Version,
+		ChainID:                "",
 		PolicyPath:             policyPath,
 		CurrentPolicyVersion:   request.Policy.Version,
 		CurrentPolicyDigest:    policyDigest,
@@ -2269,6 +2304,117 @@ func SignerRotationActivationAuditReconcile(
 		}
 	}
 	return report, nil
+}
+
+func SignerRotationActivationAuditExport(
+	request SignerRotationActivationAuditExportRequest,
+) (SignerRotationActivationAuditExportPackage, error) {
+	if request.Policy.Version == "" {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit export policy version must be set")
+	}
+	report := request.Reconciliation
+	if report.Version != "1.0.0" {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("unexpected activation audit reconciliation report version: %s", report.Version)
+	}
+	if request.Ledger.Version != "" && request.Ledger.Version != "1.0.0" {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("unexpected activation audit ledger version: %s", request.Ledger.Version)
+	}
+	policyDigest, err := checkpointSignerPolicyDigest(request.Policy)
+	if err != nil {
+		return SignerRotationActivationAuditExportPackage{}, err
+	}
+	policyPath := strings.TrimSpace(request.PolicyPath)
+	if policyPath == "" {
+		policyPath = strings.TrimSpace(report.PolicyPath)
+	}
+	if policyPath == "" {
+		policyPath = strings.TrimSpace(request.Ledger.PolicyPath)
+	}
+	if policyPath == "" {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit export policy path must be set")
+	}
+	if report.PolicyPath != "" && report.PolicyPath != policyPath {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation policy_path mismatch")
+	}
+	if request.Ledger.PolicyPath != "" && request.Ledger.PolicyPath != policyPath {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit ledger policy_path mismatch")
+	}
+	if report.CurrentPolicyVersion != request.Policy.Version {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation current_policy_version mismatch")
+	}
+	if report.CurrentPolicyDigest != policyDigest {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation current_policy_digest mismatch")
+	}
+	if report.EntryCount != len(request.Ledger.Entries) {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation entry_count mismatch")
+	}
+
+	chainID := strings.TrimSpace(report.ChainID)
+	if chainID == "" {
+		if len(request.Ledger.Entries) > 0 {
+			chainID = request.Ledger.Entries[0].ChainID
+		}
+		if chainID == "" {
+			chainID = request.Ledger.ChainID
+		}
+	}
+	if chainID == "" {
+		chainID = "unknown"
+	}
+	if request.Ledger.ChainID != "" && request.Ledger.ChainID != chainID {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit ledger chain_id mismatch")
+	}
+	if report.ChainID != "" && report.ChainID != chainID {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation chain_id mismatch")
+	}
+
+	var latestEntry *SignerRotationActivationAuditEntry
+	if len(request.Ledger.Entries) > 0 {
+		entry := request.Ledger.Entries[len(request.Ledger.Entries)-1]
+		if report.LatestReceiptID != entry.ReceiptID {
+			return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation latest_receipt_id mismatch")
+		}
+		if report.LatestTargetVersion != entry.TargetPolicyVersion {
+			return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation latest_target_policy_version mismatch")
+		}
+		if report.LatestPolicyDigest != entry.AppliedPolicyDigest {
+			return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation latest_applied_policy_digest mismatch")
+		}
+		entryCopy := entry
+		latestEntry = &entryCopy
+	} else if report.LatestReceiptID != "" || report.LatestTargetVersion != "" || report.LatestPolicyDigest != "" {
+		return SignerRotationActivationAuditExportPackage{}, fmt.Errorf("activation audit reconciliation latest entry metadata mismatch")
+	}
+
+	exportStatus := report.Status
+	if exportStatus == "" {
+		exportStatus = "unknown"
+	}
+	return SignerRotationActivationAuditExportPackage{
+		Version:    "1.0.0",
+		Status:     exportStatus,
+		ChainID:    chainID,
+		PolicyPath: policyPath,
+		BaselineSnapshot: SignerRotationActivationAuditBaselineSnapshot{
+			Version:                "1.0.0",
+			Status:                 exportStatus,
+			ChainID:                chainID,
+			PolicyPath:             policyPath,
+			LedgerEntryCount:       len(request.Ledger.Entries),
+			CurrentPolicyVersion:   request.Policy.Version,
+			CurrentPolicyDigest:    policyDigest,
+			CurrentPolicyExplained: report.CurrentPolicyExplained,
+			LatestReceiptID:        report.LatestReceiptID,
+			LatestTargetVersion:    report.LatestTargetVersion,
+			LatestPolicyDigest:     report.LatestPolicyDigest,
+			LatestEntry:            latestEntry,
+			ReconciliationStatus:   report.Status,
+			ContinuityIssues:       append([]string(nil), report.Issues...),
+		},
+		CurrentPolicy:  request.Policy,
+		Ledger:         request.Ledger,
+		Reconciliation: report,
+	}, nil
 }
 
 func recommendedRotationAction(rotationStatus string) string {

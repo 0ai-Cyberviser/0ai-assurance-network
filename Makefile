@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -32,6 +32,7 @@ help:
 	@echo "  signer-rotation-verify Sign a post-activation verification receipt against the applied policy"
 	@echo "  signer-rotation-ledger-append Append a verified activation record into the audit ledger"
 	@echo "  signer-rotation-ledger-reconcile Reconcile the activation audit ledger against the current signer policy"
+	@echo "  signer-rotation-ledger-export Export the activation audit ledger with baseline snapshot and continuity report"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -130,6 +131,9 @@ signer-rotation-ledger-append:
 
 signer-rotation-ledger-reconcile:
 	./0aid signer-rotation-ledger-reconcile --root . $(if $(LEDGER),--ledger $(LEDGER),) $(if $(POLICY),--policy $(POLICY),) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-ledger-export:
+	./0aid signer-rotation-ledger-export --root . $(if $(LEDGER),--ledger $(LEDGER),) $(if $(POLICY),--policy $(POLICY),) $(if $(RECONCILE),--reconcile $(RECONCILE),) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
