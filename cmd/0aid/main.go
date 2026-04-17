@@ -144,6 +144,90 @@ func run(args []string) error {
 			return printJSON(receipt)
 		}
 		return project.WriteJSON(filepath.Clean(*out), receipt)
+	case "signer-rotation-approve":
+		fs := flag.NewFlagSet("signer-rotation-approve", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		receiptPath := fs.String("receipt", "", "signer rotation receipt path")
+		role := fs.String("role", "", "approval role")
+		signerID := fs.String("signer-id", "", "approval signer id")
+		approvedAt := fs.String("approved-at", "", "approval timestamp")
+		signatureID := fs.String("signature-id", "", "explicit signature id")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *receiptPath == "" {
+			return errors.New("signer-rotation-approve requires --receipt")
+		}
+		if *role == "" {
+			return errors.New("signer-rotation-approve requires --role")
+		}
+		if *signerID == "" {
+			return errors.New("signer-rotation-approve requires --signer-id")
+		}
+		if *approvedAt == "" {
+			return errors.New("signer-rotation-approve requires --approved-at")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		var receipt project.SignerRotationReceiptOutput
+		if err := readJSONFile(filepath.Clean(*receiptPath), &receipt); err != nil {
+			return err
+		}
+		approval, err := project.GenerateSignerRotationApproval(bundle, project.SignerRotationApprovalRequest{
+			Receipt:      receipt,
+			ApprovalRole: *role,
+			SignerID:     *signerID,
+			ApprovedAt:   *approvedAt,
+			SignatureID:  *signatureID,
+		})
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(approval)
+		}
+		return project.WriteJSON(filepath.Clean(*out), approval)
+	case "signer-rotation-finalize":
+		fs := flag.NewFlagSet("signer-rotation-finalize", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		receiptPath := fs.String("receipt", "", "signer rotation receipt path")
+		approvalsPath := fs.String("approvals", "", "approval artifact path")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *receiptPath == "" {
+			return errors.New("signer-rotation-finalize requires --receipt")
+		}
+		if *approvalsPath == "" {
+			return errors.New("signer-rotation-finalize requires --approvals")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		var receipt project.SignerRotationReceiptOutput
+		if err := readJSONFile(filepath.Clean(*receiptPath), &receipt); err != nil {
+			return err
+		}
+		approvals, err := readSignerRotationApprovals(filepath.Clean(*approvalsPath))
+		if err != nil {
+			return err
+		}
+		finalized, err := project.SignerRotationFinalize(bundle, project.SignerRotationFinalizeRequest{
+			Receipt:   receipt,
+			Approvals: approvals,
+		})
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(finalized)
+		}
+		return project.WriteJSON(filepath.Clean(*out), finalized)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -312,8 +396,54 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
+}
+
+func readJSONFile(path string, destination any) error {
+	contents, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(contents, destination); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	return nil
+}
+
+func readSignerRotationApprovals(path string) ([]project.SignerRotationApproval, error) {
+	paths := strings.Split(path, ",")
+	collected := make([]project.SignerRotationApproval, 0, len(paths))
+	for _, rawPath := range paths {
+		cleanPath := filepath.Clean(strings.TrimSpace(rawPath))
+		if cleanPath == "" {
+			continue
+		}
+		contents, err := os.ReadFile(cleanPath)
+		if err != nil {
+			return nil, err
+		}
+		var envelope project.SignerRotationApprovalEnvelope
+		if err := json.Unmarshal(contents, &envelope); err == nil && len(envelope.Approvals) > 0 {
+			collected = append(collected, envelope.Approvals...)
+			continue
+		}
+		var approvals []project.SignerRotationApproval
+		if err := json.Unmarshal(contents, &approvals); err == nil && len(approvals) > 0 {
+			collected = append(collected, approvals...)
+			continue
+		}
+		var single project.SignerRotationApproval
+		if err := json.Unmarshal(contents, &single); err == nil && single.ReceiptID != "" {
+			collected = append(collected, single)
+			continue
+		}
+		return nil, fmt.Errorf("parse %s: expected approval object, array, or envelope", cleanPath)
+	}
+	if len(collected) == 0 {
+		return nil, fmt.Errorf("no approval artifacts found in %s", path)
+	}
+	return collected, nil
 }
 
 func printJSON(value any) error {
