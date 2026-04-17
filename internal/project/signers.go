@@ -2626,9 +2626,15 @@ func BuildSignerRotationActivationAuditArchiveIndex(
 		latestOrder string
 	}
 	indexedEntries := make([]indexedEntry, 0, len(request.Packages))
+	seenPackagePaths := make(map[string]struct{}, len(request.Packages))
 	seenVersions := make(map[string]string, len(request.Packages))
 	seenReceipts := make(map[string]string, len(request.Packages))
 	for _, item := range request.Packages {
+		if _, exists := seenPackagePaths[item.PackagePath]; exists {
+			index.Issues = append(index.Issues, fmt.Sprintf("duplicate archive package_path %s", item.PackagePath))
+		} else {
+			seenPackagePaths[item.PackagePath] = struct{}{}
+		}
 		verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
 			ExportPackage: item.ExportPackage,
 		})
@@ -2737,13 +2743,22 @@ func ensureActivationAuditArchiveIndexConsistent(index SignerRotationActivationA
 	if len(index.Entries) != index.PackageCount {
 		return fmt.Errorf("activation audit archive index package_count mismatch")
 	}
+	seenPackagePaths := make(map[string]struct{}, len(index.Entries))
 	archiveReadyCount := 0
 	for _, entry := range index.Entries {
-		if entry.ArchiveReady {
-			archiveReadyCount++
+		if _, exists := seenPackagePaths[entry.PackagePath]; exists {
+			return fmt.Errorf("activation audit archive index contains duplicate package_path: %s", entry.PackagePath)
 		}
+		seenPackagePaths[entry.PackagePath] = struct{}{}
+		if !entry.ArchiveReady {
+			return fmt.Errorf("activation audit archive index contains non-archive-ready entry for package_path: %s", entry.PackagePath)
+		}
+		if entry.Status != "consistent" {
+			return fmt.Errorf("activation audit archive index contains non-consistent entry for package_path: %s", entry.PackagePath)
+		}
+		archiveReadyCount++
 	}
-	if archiveReadyCount != index.ArchiveReadyCount {
+	if archiveReadyCount != index.ArchiveReadyCount || archiveReadyCount != len(index.Entries) {
 		return fmt.Errorf("activation audit archive index archive_ready_count mismatch")
 	}
 	if len(index.Entries) > 0 {
