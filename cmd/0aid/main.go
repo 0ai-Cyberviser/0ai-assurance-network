@@ -47,6 +47,25 @@ func run(args []string) error {
 			return printJSON(plan)
 		}
 		return project.WriteJSON(filepath.Clean(*out), plan)
+	case "identity-plan":
+		fs := flag.NewFlagSet("identity-plan", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		plan, err := project.IdentityFoundationPlan(bundle)
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(plan)
+		}
+		return project.WriteJSON(filepath.Clean(*out), plan)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -215,7 +234,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 

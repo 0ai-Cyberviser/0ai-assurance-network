@@ -169,6 +169,7 @@ class AssuranceCtlTests(unittest.TestCase):
                 ("config/policy/release-guards.json", "config/policy/release-guards.json"),
                 ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
                 ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
             ):
                 target_path = root / target
                 target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -187,6 +188,76 @@ class AssuranceCtlTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], "not_ready")
             self.assertTrue(any("missing threat model" == item for item in payload["blockers"]))
+
+    def test_validate_fails_when_identity_binding_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for source, target in (
+                ("config/network-topology.json", "config/network-topology.json"),
+                ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
+                ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
+            ):
+                target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            identity_path = root / "config" / "identity" / "bootstrap.json"
+            identity_payload = json.loads(identity_path.read_text(encoding="utf-8"))
+            identity_payload["role_bindings"] = [
+                binding
+                for binding in identity_payload["role_bindings"]
+                if binding["role"] != "network_admin"
+            ]
+            identity_path.write_text(json.dumps(identity_payload), encoding="utf-8")
+
+            env = {"PYTHONPATH": PYTHONPATH}
+            result = subprocess.run(
+                [sys.executable, "-m", "assurancectl.cli", "--root", str(root), "validate"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("identity bootstrap missing active bindings", result.stderr)
+
+    def test_validate_fails_when_identity_binding_is_duplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for source, target in (
+                ("config/network-topology.json", "config/network-topology.json"),
+                ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
+                ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
+            ):
+                target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            identity_path = root / "config" / "identity" / "bootstrap.json"
+            identity_payload = json.loads(identity_path.read_text(encoding="utf-8"))
+            identity_payload["role_bindings"].append(identity_payload["role_bindings"][0])
+            identity_path.write_text(json.dumps(identity_payload), encoding="utf-8")
+
+            env = {"PYTHONPATH": PYTHONPATH}
+            result = subprocess.run(
+                [sys.executable, "-m", "assurancectl.cli", "--root", str(root), "validate"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("duplicate identity role binding", result.stderr)
 
     def test_governance_sim_treasury_grant(self) -> None:
         result = self.run_cli(

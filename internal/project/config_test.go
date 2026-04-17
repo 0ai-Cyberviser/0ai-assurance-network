@@ -26,4 +26,10 @@ func TestLoadBundle(t *testing.T) {
 	if len(bundle.Modules.MVPModules) != 2 {
 		t.Fatalf("expected 2 mvp modules, got %d", len(bundle.Modules.MVPModules))
 	}
+	if bundle.Identity.Version != "1.0.0" {
+		t.Fatalf("unexpected identity bootstrap version: %s", bundle.Identity.Version)
+	}
+	if len(bundle.Identity.RoleBindings) != 8 {
+		t.Fatalf("expected 8 identity role bindings, got %d", len(bundle.Identity.RoleBindings))
+	}
 }

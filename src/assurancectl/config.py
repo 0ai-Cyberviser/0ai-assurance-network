@@ -22,6 +22,7 @@ class LoadedConfig:
     policy: dict[str, Any]
     checkpoint_signers: dict[str, Any]
     module_plan: dict[str, Any]
+    identity_bootstrap: dict[str, Any]
 
 
 def root_dir(explicit_root: str | Path | None = None) -> Path:
@@ -45,6 +46,7 @@ def load_config(explicit_root: str | Path | None = None) -> LoadedConfig:
         policy=_load_json(config / "policy" / "release-guards.json"),
         checkpoint_signers=_load_json(config / "governance" / "checkpoint-signers.json"),
         module_plan=_load_json(config / "modules" / "milestone-1.json"),
+        identity_bootstrap=_load_json(config / "identity" / "bootstrap.json"),
     )
 
 
@@ -210,9 +212,76 @@ def validate_module_plan(module_plan: dict[str, Any]) -> None:
         seen_phase_names.add(phase_name)
 
 
+def _required_identity_roles(module_plan: dict[str, Any]) -> set[str]:
+    required: set[str] = set()
+    for collection_name in ("mvp_modules", "dependency_surfaces"):
+        for module in module_plan[collection_name]:
+            for tx in module["transactions"]:
+                required.update(str(role) for role in tx["actor_roles"])
+            for permission in module["operator_permissions"]:
+                required.add(str(permission["role"]))
+    return required
+
+
+def validate_identity_bootstrap(identity_bootstrap: dict[str, Any], module_plan: dict[str, Any], topology: dict[str, Any]) -> None:
+    _assert(identity_bootstrap["version"] != "", "identity bootstrap version must be set")
+    _assert(identity_bootstrap["chain_id"] == topology["chain_id"], "identity bootstrap chain id must match topology")
+
+    actors = list(identity_bootstrap["actors"])
+    role_bindings = list(identity_bootstrap["role_bindings"])
+    _assert(actors, "identity bootstrap actors must not be empty")
+    _assert(role_bindings, "identity bootstrap role bindings must not be empty")
+
+    allowed_actor_types = {"organization", "operator", "council", "service_account"}
+    allowed_status = {"active", "inactive"}
+    actors_by_id: dict[str, dict[str, Any]] = {}
+    for actor in actors:
+        actor_id = str(actor["actor_id"])
+        _assert(actor_id not in actors_by_id, f"duplicate identity actor id: {actor_id}")
+        _assert(actor["actor_type"] in allowed_actor_types, f"identity actor {actor_id} has invalid actor_type")
+        _assert(actor["status"] in allowed_status, f"identity actor {actor_id} has invalid status")
+        _assert(str(actor["display_name"]) != "", f"identity actor {actor_id} must declare a display_name")
+        actors_by_id[actor_id] = actor
+
+    for actor in actors:
+        organization_id = str(actor.get("organization_id", "") or "")
+        if not organization_id:
+            continue
+        _assert(organization_id in actors_by_id, f"identity actor {actor['actor_id']} references unknown organization")
+        organization = actors_by_id[organization_id]
+        _assert(
+            organization["actor_type"] in {"organization", "council"},
+            f"identity actor {actor['actor_id']} organization must be organization or council",
+        )
+
+    required_roles = _required_identity_roles(module_plan)
+    seen_bindings: set[str] = set()
+    active_roles: set[str] = set()
+    for binding in role_bindings:
+        actor_id = str(binding["actor_id"])
+        role = str(binding["role"])
+        scope = str(binding["scope"])
+        granted_by = str(binding["granted_by"])
+        status = str(binding["status"])
+        _assert(actor_id in actors_by_id, f"identity role binding references unknown actor {actor_id}")
+        _assert(role in required_roles, f"identity role binding uses undeclared role {role}")
+        _assert(scope != "", f"identity role binding {actor_id}/{role} must declare a scope")
+        _assert(granted_by != "", f"identity role binding {actor_id}/{role} must declare granted_by")
+        _assert(status in allowed_status, f"identity role binding {actor_id}/{role} has invalid status")
+        binding_key = f"{actor_id}|{role}|{scope}"
+        _assert(binding_key not in seen_bindings, f"duplicate identity role binding: {binding_key}")
+        seen_bindings.add(binding_key)
+        if status == "active":
+            active_roles.add(role)
+
+    missing_roles = sorted(required_roles - active_roles)
+    _assert(not missing_roles, f"identity bootstrap missing active bindings for roles: {', '.join(missing_roles)}")
+
+
 def validate_all(config: LoadedConfig) -> None:
     validate_topology(config.topology)
     validate_genesis(config.genesis, config.topology)
     validate_policy(config.policy)
     validate_checkpoint_signers(config.checkpoint_signers)
     validate_module_plan(config.module_plan)
+    validate_identity_bootstrap(config.identity_bootstrap, config.module_plan, config.topology)

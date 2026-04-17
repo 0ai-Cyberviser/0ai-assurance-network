@@ -13,6 +13,7 @@ type Bundle struct {
 	Genesis  GenesisConfig
 	Policy   PolicyConfig
 	Modules  ModulePlanConfig
+	Identity IdentityBootstrapConfig
 }
 
 type TopologyConfig struct {
@@ -156,6 +157,29 @@ type ModuleRollout struct {
 	ChainSurfaces []string `json:"chain_surfaces"`
 }
 
+type IdentityBootstrapConfig struct {
+	Version      string                `json:"version"`
+	ChainID      string                `json:"chain_id"`
+	Actors       []IdentityActor       `json:"actors"`
+	RoleBindings []IdentityRoleBinding `json:"role_bindings"`
+}
+
+type IdentityActor struct {
+	ActorID        string `json:"actor_id"`
+	ActorType      string `json:"actor_type"`
+	DisplayName    string `json:"display_name"`
+	OrganizationID string `json:"organization_id,omitempty"`
+	Status         string `json:"status"`
+}
+
+type IdentityRoleBinding struct {
+	ActorID   string `json:"actor_id"`
+	Role      string `json:"role"`
+	Scope     string `json:"scope"`
+	GrantedBy string `json:"granted_by"`
+	Status    string `json:"status"`
+}
+
 func LoadBundle(root string) (Bundle, error) {
 	resolvedRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -182,12 +206,18 @@ func LoadBundle(root string) (Bundle, error) {
 		return Bundle{}, err
 	}
 
+	var identity IdentityBootstrapConfig
+	if err := loadJSON(filepath.Join(resolvedRoot, "config", "identity", "bootstrap.json"), &identity); err != nil {
+		return Bundle{}, err
+	}
+
 	return Bundle{
 		Root:     resolvedRoot,
 		Topology: topology,
 		Genesis:  genesis,
 		Policy:   policy,
 		Modules:  modules,
+		Identity: identity,
 	}, nil
 }
 
