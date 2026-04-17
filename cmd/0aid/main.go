@@ -397,6 +397,50 @@ func run(args []string) error {
 			return printJSON(appendResult)
 		}
 		return project.WriteJSON(filepath.Clean(*out), appendResult)
+	case "signer-rotation-ledger-reconcile":
+		fs := flag.NewFlagSet("signer-rotation-ledger-reconcile", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		ledgerPath := fs.String("ledger", "", "activation audit ledger path")
+		policyPath := fs.String("policy", "", "checkpoint signer policy path")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		resolvedLedgerPath := strings.TrimSpace(*ledgerPath)
+		if resolvedLedgerPath == "" {
+			resolvedLedgerPath = filepath.Join(*root, "build/rotation/activation-audit-ledger.json")
+		}
+		resolvedPolicyPath := strings.TrimSpace(*policyPath)
+		if resolvedPolicyPath == "" {
+			resolvedPolicyPath = filepath.Join(*root, "config/governance/checkpoint-signers.json")
+		}
+		ledger := project.SignerRotationActivationAuditLedger{}
+		ledgerContents, err := os.ReadFile(filepath.Clean(resolvedLedgerPath))
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		} else if len(ledgerContents) > 0 {
+			if err := json.Unmarshal(ledgerContents, &ledger); err != nil {
+				return fmt.Errorf("parse %s: %w", resolvedLedgerPath, err)
+			}
+		}
+		var policy project.CheckpointSignerPolicyOutput
+		if err := readJSONFile(filepath.Clean(resolvedPolicyPath), &policy); err != nil {
+			return err
+		}
+		report, err := project.SignerRotationActivationAuditReconcile(project.SignerRotationActivationAuditReconcileRequest{
+			Ledger:     ledger,
+			Policy:     policy,
+			PolicyPath: "config/governance/checkpoint-signers.json",
+		})
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(report)
+		}
+		return project.WriteJSON(filepath.Clean(*out), report)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -565,7 +609,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
