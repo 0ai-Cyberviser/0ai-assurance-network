@@ -291,6 +291,49 @@ type SignerRotationVerifyRequest struct {
 	SignatureID    string
 }
 
+type SignerRotationActivationAuditEntry struct {
+	Version              string                              `json:"version"`
+	Status               string                              `json:"status"`
+	ReceiptID            string                              `json:"receipt_id"`
+	ChainID              string                              `json:"chain_id"`
+	PolicyPath           string                              `json:"policy_path"`
+	TargetPolicyVersion  string                              `json:"target_policy_version"`
+	EffectiveAt          string                              `json:"effective_at"`
+	VerifiedAt           string                              `json:"verified_at"`
+	ActivationPlanDigest string                              `json:"activation_plan_digest"`
+	AppliedPolicyDigest  string                              `json:"applied_policy_digest"`
+	SignerID             string                              `json:"signer_id"`
+	KeyID                string                              `json:"key_id"`
+	ActorID              string                              `json:"actor_id"`
+	ActorDisplayName     string                              `json:"actor_display_name"`
+	OrganizationID       string                              `json:"organization_id,omitempty"`
+	OrganizationName     string                              `json:"organization_name,omitempty"`
+	Signature            SignerRotationVerificationSignature `json:"signature"`
+}
+
+type SignerRotationActivationAuditLedger struct {
+	Version    string                               `json:"version"`
+	Status     string                               `json:"status"`
+	ChainID    string                               `json:"chain_id"`
+	PolicyPath string                               `json:"policy_path"`
+	EntryCount int                                  `json:"entry_count"`
+	Entries    []SignerRotationActivationAuditEntry `json:"entries"`
+}
+
+type SignerRotationActivationAuditAppendRequest struct {
+	ApplyResult         SignerRotationApplyResult
+	VerificationReceipt SignerRotationVerificationReceipt
+	ExistingLedger      SignerRotationActivationAuditLedger
+}
+
+type SignerRotationActivationAuditAppendResult struct {
+	Version       string                              `json:"version"`
+	Status        string                              `json:"status"`
+	AppendedIndex int                                 `json:"appended_index"`
+	AppendedEntry SignerRotationActivationAuditEntry  `json:"appended_entry"`
+	Ledger        SignerRotationActivationAuditLedger `json:"ledger"`
+}
+
 type parsedSignerEntry struct {
 	ActorID           string
 	SignerID          string
@@ -1917,6 +1960,164 @@ func SignerRotationVerify(bundle Bundle, request SignerRotationVerifyRequest) (S
 			ExpiresAt:   expiresAt.Format(time.RFC3339),
 			Value:       hex.EncodeToString(mac.Sum(nil)),
 		},
+	}, nil
+}
+
+func activationAuditEntry(
+	applyResult SignerRotationApplyResult,
+	verification SignerRotationVerificationReceipt,
+) SignerRotationActivationAuditEntry {
+	return SignerRotationActivationAuditEntry{
+		Version:              "1.0.0",
+		Status:               "verified",
+		ReceiptID:            verification.ReceiptID,
+		ChainID:              verification.ChainID,
+		PolicyPath:           verification.PolicyPath,
+		TargetPolicyVersion:  verification.TargetPolicyVersion,
+		EffectiveAt:          applyResult.AppliedAtEffect,
+		VerifiedAt:           verification.VerifiedAt,
+		ActivationPlanDigest: verification.ActivationPlanDigest,
+		AppliedPolicyDigest:  verification.PolicyDigest,
+		SignerID:             verification.SignerID,
+		KeyID:                verification.KeyID,
+		ActorID:              verification.ActorID,
+		ActorDisplayName:     verification.ActorDisplayName,
+		OrganizationID:       verification.OrganizationID,
+		OrganizationName:     verification.OrganizationName,
+		Signature:            verification.Signature,
+	}
+}
+
+func SignerRotationActivationAuditAppend(
+	request SignerRotationActivationAuditAppendRequest,
+) (SignerRotationActivationAuditAppendResult, error) {
+	if request.ApplyResult.Status != "applied" {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("signer rotation apply result must have status applied")
+	}
+	if request.VerificationReceipt.Status != "verified" {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("signer rotation verification receipt must have status verified")
+	}
+	if request.ApplyResult.ReceiptID != request.VerificationReceipt.ReceiptID {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit receipt_id mismatch")
+	}
+	if request.ApplyResult.ChainID != request.VerificationReceipt.ChainID {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit chain_id mismatch")
+	}
+	if request.ApplyResult.PolicyPath != request.VerificationReceipt.PolicyPath {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit policy_path mismatch")
+	}
+	if request.ApplyResult.TargetPolicyVersion != request.VerificationReceipt.TargetPolicyVersion {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit target_policy_version mismatch")
+	}
+	if request.ApplyResult.ActivationPlanDigest != request.VerificationReceipt.ActivationPlanDigest {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit activation_plan_digest mismatch")
+	}
+	if request.ApplyResult.AppliedPolicyDigest != request.VerificationReceipt.PolicyDigest {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit policy_digest mismatch")
+	}
+	if strings.TrimSpace(request.VerificationReceipt.Signature.SignatureID) == "" {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit verification signature_id must be set")
+	}
+	if strings.TrimSpace(request.VerificationReceipt.Signature.Value) == "" {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit verification signature must be set")
+	}
+	effectiveAt, err := parseRFC3339(request.ApplyResult.AppliedAtEffect, "activation audit effective_at")
+	if err != nil {
+		return SignerRotationActivationAuditAppendResult{}, err
+	}
+	verifiedAt, err := parseRFC3339(request.VerificationReceipt.VerifiedAt, "activation audit verified_at")
+	if err != nil {
+		return SignerRotationActivationAuditAppendResult{}, err
+	}
+	if verifiedAt.Before(effectiveAt) {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit verified_at must be on or after effective_at")
+	}
+	ledger := request.ExistingLedger
+	if ledger.Version == "" {
+		ledger = SignerRotationActivationAuditLedger{
+			Version:    "1.0.0",
+			Status:     "active",
+			ChainID:    request.ApplyResult.ChainID,
+			PolicyPath: request.ApplyResult.PolicyPath,
+			Entries:    []SignerRotationActivationAuditEntry{},
+		}
+	}
+	if ledger.Version != "1.0.0" {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("unexpected activation audit ledger version: %s", ledger.Version)
+	}
+	if ledger.Status == "" {
+		ledger.Status = "active"
+	}
+	if ledger.ChainID != request.ApplyResult.ChainID {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit ledger chain_id mismatch")
+	}
+	if ledger.PolicyPath != request.ApplyResult.PolicyPath {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit ledger policy_path mismatch")
+	}
+
+	var lastEffectiveAt time.Time
+	var lastVerifiedAt time.Time
+	seenReceiptIDs := make(map[string]struct{}, len(ledger.Entries))
+	seenTargetVersions := make(map[string]struct{}, len(ledger.Entries))
+	seenSignatureIDs := make(map[string]struct{}, len(ledger.Entries))
+	for _, entry := range ledger.Entries {
+		if _, exists := seenReceiptIDs[entry.ReceiptID]; exists {
+			return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("duplicate activation audit receipt_id in ledger: %s", entry.ReceiptID)
+		}
+		seenReceiptIDs[entry.ReceiptID] = struct{}{}
+		if _, exists := seenTargetVersions[entry.TargetPolicyVersion]; exists {
+			return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("duplicate activation audit target_policy_version in ledger: %s", entry.TargetPolicyVersion)
+		}
+		seenTargetVersions[entry.TargetPolicyVersion] = struct{}{}
+		if _, exists := seenSignatureIDs[entry.Signature.SignatureID]; exists {
+			return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("duplicate activation audit signature_id in ledger: %s", entry.Signature.SignatureID)
+		}
+		seenSignatureIDs[entry.Signature.SignatureID] = struct{}{}
+
+		entryEffectiveAt, err := parseRFC3339(entry.EffectiveAt, "activation audit ledger effective_at")
+		if err != nil {
+			return SignerRotationActivationAuditAppendResult{}, err
+		}
+		entryVerifiedAt, err := parseRFC3339(entry.VerifiedAt, "activation audit ledger verified_at")
+		if err != nil {
+			return SignerRotationActivationAuditAppendResult{}, err
+		}
+		if entryVerifiedAt.Before(entryEffectiveAt) {
+			return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit ledger entry verified_at must be on or after effective_at")
+		}
+		if entryEffectiveAt.After(lastEffectiveAt) {
+			lastEffectiveAt = entryEffectiveAt
+		}
+		if entryVerifiedAt.After(lastVerifiedAt) {
+			lastVerifiedAt = entryVerifiedAt
+		}
+	}
+
+	if _, exists := seenReceiptIDs[request.ApplyResult.ReceiptID]; exists {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit receipt_id already recorded: %s", request.ApplyResult.ReceiptID)
+	}
+	if _, exists := seenTargetVersions[request.ApplyResult.TargetPolicyVersion]; exists {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit target_policy_version already recorded: %s", request.ApplyResult.TargetPolicyVersion)
+	}
+	if _, exists := seenSignatureIDs[request.VerificationReceipt.Signature.SignatureID]; exists {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit signature_id already recorded: %s", request.VerificationReceipt.Signature.SignatureID)
+	}
+	if !lastEffectiveAt.IsZero() && !effectiveAt.After(lastEffectiveAt) {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit effective_at must be strictly increasing")
+	}
+	if !lastVerifiedAt.IsZero() && !verifiedAt.After(lastVerifiedAt) {
+		return SignerRotationActivationAuditAppendResult{}, fmt.Errorf("activation audit verified_at must be strictly increasing")
+	}
+
+	entry := activationAuditEntry(request.ApplyResult, request.VerificationReceipt)
+	ledger.Entries = append(ledger.Entries, entry)
+	ledger.EntryCount = len(ledger.Entries)
+	return SignerRotationActivationAuditAppendResult{
+		Version:       "1.0.0",
+		Status:        "appended",
+		AppendedIndex: len(ledger.Entries) - 1,
+		AppendedEntry: entry,
+		Ledger:        ledger,
 	}, nil
 }
 

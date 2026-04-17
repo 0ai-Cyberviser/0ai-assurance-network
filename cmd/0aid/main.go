@@ -343,6 +343,60 @@ func run(args []string) error {
 			return printJSON(receipt)
 		}
 		return project.WriteJSON(filepath.Clean(*out), receipt)
+	case "signer-rotation-ledger-append":
+		fs := flag.NewFlagSet("signer-rotation-ledger-append", flag.ContinueOnError)
+		applyPath := fs.String("apply", "", "signer rotation apply result path")
+		verificationPath := fs.String("verification", "", "signer rotation verification receipt path")
+		ledgerPath := fs.String("ledger", "", "existing activation audit ledger path")
+		ledgerOut := fs.String("ledger-out", "", "updated activation audit ledger output path")
+		out := fs.String("out", "", "append result output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *applyPath == "" {
+			return errors.New("signer-rotation-ledger-append requires --apply")
+		}
+		if *verificationPath == "" {
+			return errors.New("signer-rotation-ledger-append requires --verification")
+		}
+		var applyResult project.SignerRotationApplyResult
+		if err := readJSONFile(filepath.Clean(*applyPath), &applyResult); err != nil {
+			return err
+		}
+		var verification project.SignerRotationVerificationReceipt
+		if err := readJSONFile(filepath.Clean(*verificationPath), &verification); err != nil {
+			return err
+		}
+		ledger := project.SignerRotationActivationAuditLedger{}
+		if strings.TrimSpace(*ledgerPath) != "" {
+			contents, err := os.ReadFile(filepath.Clean(*ledgerPath))
+			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
+			} else if len(contents) > 0 {
+				if err := json.Unmarshal(contents, &ledger); err != nil {
+					return fmt.Errorf("parse %s: %w", *ledgerPath, err)
+				}
+			}
+		}
+		appendResult, err := project.SignerRotationActivationAuditAppend(project.SignerRotationActivationAuditAppendRequest{
+			ApplyResult:         applyResult,
+			VerificationReceipt: verification,
+			ExistingLedger:      ledger,
+		})
+		if err != nil {
+			return err
+		}
+		if *ledgerOut != "" {
+			if err := project.WriteJSON(filepath.Clean(*ledgerOut), appendResult.Ledger); err != nil {
+				return err
+			}
+		}
+		if *out == "" {
+			return printJSON(appendResult)
+		}
+		return project.WriteJSON(filepath.Clean(*out), appendResult)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -511,7 +565,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 

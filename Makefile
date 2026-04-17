@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -30,6 +30,7 @@ help:
 	@echo "  signer-rotation-activate Render an activation plan and checkpoint-signer policy patch"
 	@echo "  signer-rotation-apply Validate an activation plan and emit the applied checkpoint signer policy"
 	@echo "  signer-rotation-verify Sign a post-activation verification receipt against the applied policy"
+	@echo "  signer-rotation-ledger-append Append a verified activation record into the audit ledger"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -120,6 +121,11 @@ signer-rotation-verify:
 	@test -n "$(PLAN)" || (echo "Usage: make signer-rotation-verify PLAN=build/rotation/governance-chair-activation-plan.json VERIFIED_AT=2026-04-24T00:15:00Z" && exit 1)
 	@test -n "$(VERIFIED_AT)" || (echo "Usage: make signer-rotation-verify PLAN=build/rotation/governance-chair-activation-plan.json VERIFIED_AT=2026-04-24T00:15:00Z" && exit 1)
 	./0aid signer-rotation-verify --root . --plan $(PLAN) --verified-at $(VERIFIED_AT) $(if $(POLICY),--policy $(POLICY),) $(if $(SIGNATURE_ID),--signature-id $(SIGNATURE_ID),) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-ledger-append:
+	@test -n "$(APPLY)" || (echo "Usage: make signer-rotation-ledger-append APPLY=build/rotation/governance-chair-apply-result.json VERIFICATION=build/rotation/governance-chair-verification.json" && exit 1)
+	@test -n "$(VERIFICATION)" || (echo "Usage: make signer-rotation-ledger-append APPLY=build/rotation/governance-chair-apply-result.json VERIFICATION=build/rotation/governance-chair-verification.json" && exit 1)
+	./0aid signer-rotation-ledger-append --apply $(APPLY) --verification $(VERIFICATION) $(if $(LEDGER),--ledger $(LEDGER),) $(if $(LEDGER_OUT),--ledger-out $(LEDGER_OUT),) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)

@@ -244,6 +244,46 @@ Verification fails closed when:
 - `verified_at` falls before `effective_at`, before `provisioned_at`, or after
   the incoming signer `rotate_by`
 
+## Activation audit ledger
+
+`0aid signer-rotation-ledger-append` appends a verified activation record into
+an append-only audit ledger.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-append \
+  --apply ./build/rotation/governance-chair-apply-result.json \
+  --verification ./build/rotation/governance-chair-verification.json \
+  --ledger-out ./build/rotation/activation-audit-ledger.json \
+  --out ./build/rotation/governance-chair-ledger-append.json
+```
+
+The append result includes:
+
+- the appended audit entry
+- the updated ledger
+- a stable append index
+
+Each audit entry binds:
+
+- `receipt_id`
+- `target_policy_version`
+- `activation_plan_digest`
+- `applied_policy_digest`
+- `effective_at`
+- `verified_at`
+- the verifying signer/key and actor ownership context
+- the verification signature envelope
+
+Ledger append fails closed when:
+
+- the apply result and verification receipt disagree on receipt or policy digests
+- the verification signature metadata is missing
+- the same `receipt_id`, `target_policy_version`, or `signature_id` already exists
+- the new record would move `effective_at` or `verified_at` backward
+- an existing ledger entry is already malformed
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -260,3 +300,5 @@ Verification fails closed when:
    replacement manifest is ready to become the new active state.
 10. Sign and retain a post-activation verification receipt proving the new
     signer set became active exactly as planned.
+11. Append the apply + verification outputs into the activation audit ledger so
+    the signer lineage stays append-only and reviewable over time.

@@ -82,6 +82,7 @@ make -C projects/0ai-assurance-network signer-rotation-finalize RECEIPT=build/ro
 make -C projects/0ai-assurance-network signer-rotation-activate BUNDLE=build/rotation/governance-chair-approved-bundle.json INCOMING_SHARED_SECRET=dev-secret-governance-chair-v2
 make -C projects/0ai-assurance-network signer-rotation-apply PLAN=build/rotation/governance-chair-activation-plan.json POLICY_OUT=build/rotation/governance-chair-applied-policy.json
 make -C projects/0ai-assurance-network signer-rotation-verify PLAN=build/rotation/governance-chair-activation-plan.json POLICY=build/rotation/governance-chair-applied-policy.json VERIFIED_AT=2026-04-24T00:15:00Z
+make -C projects/0ai-assurance-network signer-rotation-ledger-append APPLY=build/rotation/governance-chair-apply-result.json VERIFICATION=build/rotation/governance-chair-verification.json LEDGER_OUT=build/rotation/activation-audit-ledger.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -223,6 +224,12 @@ when the applied policy drifts from the activation plan, the outgoing signer is
 still present, the incoming signer is missing, or the verification timestamp
 falls outside the new signer validity window.
 
+`signer-rotation-ledger-append` binds the apply result and verification receipt
+into an append-only activation audit ledger. It rejects mismatched receipt or
+policy digests, duplicate receipt IDs, duplicate target policy versions,
+replayed verification signatures, and non-monotonic effective or verified
+timestamps.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -241,6 +248,7 @@ currently supports:
 - `signer-rotation-activate`
 - `signer-rotation-apply`
 - `signer-rotation-verify`
+- `signer-rotation-ledger-append`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
@@ -286,6 +294,11 @@ Bootstrap examples:
   --policy ./build/rotation/governance-chair-applied-policy.json \
   --verified-at 2026-04-24T00:15:00Z \
   --out ./build/rotation/governance-chair-verification.json
+./0aid signer-rotation-ledger-append \
+  --apply ./build/rotation/governance-chair-apply-result.json \
+  --verification ./build/rotation/governance-chair-verification.json \
+  --ledger-out ./build/rotation/activation-audit-ledger.json \
+  --out ./build/rotation/governance-chair-ledger-append.json
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
 ./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
 ./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json
