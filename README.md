@@ -87,8 +87,9 @@ make -C projects/0ai-assurance-network signer-rotation-ledger-reconcile LEDGER=b
 make -C projects/0ai-assurance-network signer-rotation-ledger-export LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json OUT=build/rotation/governance-chair-audit-export.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-verify-export EXPORT=build/rotation/governance-chair-audit-export.json OUT=build/rotation/governance-chair-audit-export-verify.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-archive-index EXPORTS=build/rotation/current-audit-export.json,build/rotation/governance-chair-audit-export.json OUT=build/rotation/activation-audit-archive-index.json
-make -C projects/0ai-assurance-network signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z OUT=build/rotation/governance-chair-archive-promotion.json
-make -C projects/0ai-assurance-network signer-rotation-ledger-attest-retained-baseline PROMOTION_RECEIPT=build/rotation/governance-chair-archive-promotion.json ATTESTED_AT=2026-04-24T01:05:00Z OUT=build/rotation/governance-chair-retained-baseline-attestation.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot OUT=build/rotation/governance-chair-archive-promotion.json RECEIPT_OUT=build/rotation/governance-chair-archive-promotion-receipt.json ATTESTATION_OUT=build/rotation/governance-chair-retained-baseline-attestation.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot OUT=build/rotation/governance-chair-archive-verification.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-retained-inventory PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json OUT=build/rotation/retained-archive-inventory.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -265,6 +266,28 @@ set of retained export packages. The index summarizes current policy versions,
 latest receipt lineage, archive readiness, and duplicate or contradictory
 baseline metadata across the retained package set.
 
+`signer-rotation-ledger-promote` is the retained-baseline gate. It requires a
+verified export package plus a consistent archive index, then emits:
+
+- a deterministic archive promotion receipt
+- a retained-baseline attestation bound to the archive index entry
+- digests for the export package, verification report, archive index, and entry lineage
+
+Promotion fails closed when the supplied verification report drifts from the
+recomputed export verification, the archive index is not `consistent`, or the
+indexed retained baseline does not exactly match the verified export lineage.
+
+`signer-rotation-ledger-verify-promotion` independently replays that promotion
+lineage and emits a deterministic verification receipt over the promoted
+retained baseline. It only succeeds when the promotion result can be
+recomputed exactly from the supplied export package, export verification
+report, and archive index.
+
+`signer-rotation-ledger-retained-inventory` builds a stable retained inventory
+snapshot over one or more verified promoted baselines. It fails closed when
+verification receipts drift from the promoted receipt/attestation lineage or
+when retained entries collide on policy version, receipt id, or attestation id.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -288,6 +311,9 @@ currently supports:
 - `signer-rotation-ledger-export`
 - `signer-rotation-ledger-verify-export`
 - `signer-rotation-ledger-archive-index`
+- `signer-rotation-ledger-promote`
+- `signer-rotation-ledger-verify-promotion`
+- `signer-rotation-ledger-retained-inventory`
 - `show-plan`
 - `init-genesis`
 - `render-validator`

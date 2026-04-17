@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-archive-promote signer-rotation-ledger-attest-retained-baseline init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -35,8 +35,9 @@ help:
 	@echo "  signer-rotation-ledger-export Export the activation audit ledger with baseline snapshot and continuity report"
 	@echo "  signer-rotation-ledger-verify-export Verify an exported activation audit package for archive retention"
 	@echo "  signer-rotation-ledger-archive-index Build an archive index manifest over exported audit packages"
-	@echo "  signer-rotation-ledger-archive-promote Emit a receipt promoting a verified export into retained archive state"
-	@echo "  signer-rotation-ledger-attest-retained-baseline Emit a retained-baseline attestation tied to an archive entry"
+	@echo "  signer-rotation-ledger-promote Emit archive promotion receipts and retained-baseline attestations"
+	@echo "  signer-rotation-ledger-verify-promotion Verify promoted retained baselines and emit verification receipts"
+	@echo "  signer-rotation-ledger-retained-inventory Build a retained inventory snapshot over verified promoted baselines"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -147,17 +148,27 @@ signer-rotation-ledger-archive-index:
 	@test -n "$(EXPORTS)" || (echo "Usage: make signer-rotation-ledger-archive-index EXPORTS=build/rotation/current-audit-export.json,build/rotation/governance-chair-audit-export.json" && exit 1)
 	./0aid signer-rotation-ledger-archive-index --exports $(EXPORTS) $(if $(OUT),--out $(OUT),)
 
-signer-rotation-ledger-archive-promote:
-	@test -n "$(EXPORT)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
-	@test -n "$(VERIFY)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
-	@test -n "$(ARCHIVE_INDEX)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
-	@test -n "$(PROMOTED_AT)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
-	./0aid signer-rotation-ledger-archive-promote --export $(EXPORT) --verify $(VERIFY) --archive-index $(ARCHIVE_INDEX) --promoted-at $(PROMOTED_AT) $(if $(RECEIPT_ID),--receipt-id $(RECEIPT_ID),) $(if $(OUT),--out $(OUT),)
+signer-rotation-ledger-promote:
+	@test -n "$(EXPORT)" || (echo "Usage: make signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot" && exit 1)
+	@test -n "$(VERIFY)" || (echo "Usage: make signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot" && exit 1)
+	@test -n "$(INDEX)" || (echo "Usage: make signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot" && exit 1)
+	@test -n "$(PROMOTED_AT)" || (echo "Usage: make signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot" && exit 1)
+	@test -n "$(PROMOTED_BY)" || (echo "Usage: make signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot" && exit 1)
+	./0aid signer-rotation-ledger-promote --export $(EXPORT) --verify $(VERIFY) --index $(INDEX) --promoted-at $(PROMOTED_AT) --promoted-by $(PROMOTED_BY) $(if $(OUT),--out $(OUT),) $(if $(RECEIPT_OUT),--receipt-out $(RECEIPT_OUT),) $(if $(ATTESTATION_OUT),--attestation-out $(ATTESTATION_OUT),)
 
-signer-rotation-ledger-attest-retained-baseline:
-	@test -n "$(PROMOTION_RECEIPT)" || (echo "Usage: make signer-rotation-ledger-attest-retained-baseline PROMOTION_RECEIPT=build/rotation/governance-chair-archive-promotion.json ATTESTED_AT=2026-04-24T01:05:00Z" && exit 1)
-	@test -n "$(ATTESTED_AT)" || (echo "Usage: make signer-rotation-ledger-attest-retained-baseline PROMOTION_RECEIPT=build/rotation/governance-chair-archive-promotion.json ATTESTED_AT=2026-04-24T01:05:00Z" && exit 1)
-	./0aid signer-rotation-ledger-attest-retained-baseline --promotion-receipt $(PROMOTION_RECEIPT) --attested-at $(ATTESTED_AT) $(if $(ATTESTATION_ID),--attestation-id $(ATTESTATION_ID),) $(if $(OUT),--out $(OUT),)
+signer-rotation-ledger-verify-promotion:
+	@test -n "$(EXPORT)" || (echo "Usage: make signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(VERIFY)" || (echo "Usage: make signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(INDEX)" || (echo "Usage: make signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(PROMOTION)" || (echo "Usage: make signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(VERIFIED_AT)" || (echo "Usage: make signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(VERIFIED_BY)" || (echo "Usage: make signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	./0aid signer-rotation-ledger-verify-promotion --export $(EXPORT) --verify $(VERIFY) --index $(INDEX) --promotion $(PROMOTION) --verified-at $(VERIFIED_AT) --verified-by $(VERIFIED_BY) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-ledger-retained-inventory:
+	@test -n "$(PROMOTIONS)" || (echo "Usage: make signer-rotation-ledger-retained-inventory PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json" && exit 1)
+	@test -n "$(VERIFICATION_RECEIPTS)" || (echo "Usage: make signer-rotation-ledger-retained-inventory PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json" && exit 1)
+	./0aid signer-rotation-ledger-retained-inventory --promotions $(PROMOTIONS) --verification-receipts $(VERIFICATION_RECEIPTS) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)

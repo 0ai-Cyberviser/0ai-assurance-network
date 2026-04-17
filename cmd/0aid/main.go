@@ -551,30 +551,35 @@ func run(args []string) error {
 			return errors.New("activation audit archive index verification failed")
 		}
 		return nil
-	case "signer-rotation-ledger-archive-promote":
-		fs := flag.NewFlagSet("signer-rotation-ledger-archive-promote", flag.ContinueOnError)
+	case "signer-rotation-ledger-promote":
+		fs := flag.NewFlagSet("signer-rotation-ledger-promote", flag.ContinueOnError)
 		exportPath := fs.String("export", "", "activation audit export package path")
 		verifyPath := fs.String("verify", "", "activation audit export verification report path")
-		archiveIndexPath := fs.String("archive-index", "", "activation audit archive index path")
-		promotedAt := fs.String("promoted-at", "", "archive promotion timestamp")
-		receiptID := fs.String("receipt-id", "", "explicit archive promotion receipt id")
+		indexPath := fs.String("index", "", "activation audit archive index path")
+		promotedAt := fs.String("promoted-at", "", "promotion timestamp (RFC3339)")
+		promotedBy := fs.String("promoted-by", "", "operator or automation actor recording promotion")
 		out := fs.String("out", "", "output file path")
+		receiptOut := fs.String("receipt-out", "", "promotion receipt output file path")
+		attestationOut := fs.String("attestation-out", "", "retained baseline attestation output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *exportPath == "" {
-			return errors.New("signer-rotation-ledger-archive-promote requires --export")
+			return errors.New("signer-rotation-ledger-promote requires --export")
 		}
 		if *verifyPath == "" {
-			return errors.New("signer-rotation-ledger-archive-promote requires --verify")
+			return errors.New("signer-rotation-ledger-promote requires --verify")
 		}
-		if *archiveIndexPath == "" {
-			return errors.New("signer-rotation-ledger-archive-promote requires --archive-index")
+		if *indexPath == "" {
+			return errors.New("signer-rotation-ledger-promote requires --index")
 		}
 		if *promotedAt == "" {
-			return errors.New("signer-rotation-ledger-archive-promote requires --promoted-at")
+			return errors.New("signer-rotation-ledger-promote requires --promoted-at")
 		}
-		cleanExportPath := filepath.Clean(*exportPath)
+		if *promotedBy == "" {
+			return errors.New("signer-rotation-ledger-promote requires --promoted-by")
+		}
+		cleanExportPath := filepath.ToSlash(filepath.Clean(*exportPath))
 		var exportPackage project.SignerRotationActivationAuditExportPackage
 		if err := readJSONFile(cleanExportPath, &exportPackage); err != nil {
 			return err
@@ -584,59 +589,148 @@ func run(args []string) error {
 			return err
 		}
 		var archiveIndex project.SignerRotationActivationAuditArchiveIndex
-		if err := readJSONFile(filepath.Clean(*archiveIndexPath), &archiveIndex); err != nil {
+		if err := readJSONFile(filepath.Clean(*indexPath), &archiveIndex); err != nil {
 			return err
 		}
-		receipt, err := project.BuildSignerRotationActivationAuditArchivePromotionReceipt(
-			project.SignerRotationActivationAuditArchivePromotionRequest{
-				PackagePath:        filepath.ToSlash(cleanExportPath),
-				ExportPackage:      exportPackage,
-				VerificationReport: verificationReport,
-				ArchiveIndex:       archiveIndex,
-				PromotedAt:         *promotedAt,
-				ReceiptID:          *receiptID,
-			},
-		)
+		promotion, err := project.BuildSignerRotationActivationAuditArchivePromotion(project.SignerRotationActivationAuditArchivePromotionRequest{
+			PackagePath:        cleanExportPath,
+			ExportPackage:      exportPackage,
+			VerificationReport: verificationReport,
+			ArchiveIndex:       archiveIndex,
+			PromotedAt:         *promotedAt,
+			PromotedBy:         *promotedBy,
+		})
 		if err != nil {
 			return err
 		}
-		if *out != "" {
-			return project.WriteJSON(filepath.Clean(*out), receipt)
+		if *receiptOut != "" {
+			if err := project.WriteJSON(filepath.Clean(*receiptOut), promotion.PromotionReceipt); err != nil {
+				return err
+			}
 		}
-		return printJSON(receipt)
-	case "signer-rotation-ledger-attest-retained-baseline":
-		fs := flag.NewFlagSet("signer-rotation-ledger-attest-retained-baseline", flag.ContinueOnError)
-		promotionReceiptPath := fs.String("promotion-receipt", "", "archive promotion receipt path")
-		attestedAt := fs.String("attested-at", "", "retained baseline attestation timestamp")
-		attestationID := fs.String("attestation-id", "", "explicit retained baseline attestation id")
+		if *attestationOut != "" {
+			if err := project.WriteJSON(filepath.Clean(*attestationOut), promotion.RetainedBaselineAttestation); err != nil {
+				return err
+			}
+		}
+		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), promotion); err != nil {
+				return err
+			}
+		} else if *receiptOut == "" && *attestationOut == "" {
+			if err := printJSON(promotion); err != nil {
+				return err
+			}
+		}
+		if promotion.Status != "promoted" {
+			return errors.New("activation audit archive promotion failed")
+		}
+		return nil
+	case "signer-rotation-ledger-verify-promotion":
+		fs := flag.NewFlagSet("signer-rotation-ledger-verify-promotion", flag.ContinueOnError)
+		exportPath := fs.String("export", "", "activation audit export package path")
+		verifyPath := fs.String("verify", "", "activation audit export verification report path")
+		indexPath := fs.String("index", "", "activation audit archive index path")
+		promotionPath := fs.String("promotion", "", "archive promotion result path")
+		verifiedAt := fs.String("verified-at", "", "verification timestamp (RFC3339)")
+		verifiedBy := fs.String("verified-by", "", "operator or automation actor recording verification")
 		out := fs.String("out", "", "output file path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if *promotionReceiptPath == "" {
-			return errors.New("signer-rotation-ledger-attest-retained-baseline requires --promotion-receipt")
+		if *exportPath == "" {
+			return errors.New("signer-rotation-ledger-verify-promotion requires --export")
 		}
-		if *attestedAt == "" {
-			return errors.New("signer-rotation-ledger-attest-retained-baseline requires --attested-at")
+		if *verifyPath == "" {
+			return errors.New("signer-rotation-ledger-verify-promotion requires --verify")
 		}
-		var promotionReceipt project.SignerRotationActivationAuditArchivePromotionReceipt
-		if err := readJSONFile(filepath.Clean(*promotionReceiptPath), &promotionReceipt); err != nil {
+		if *indexPath == "" {
+			return errors.New("signer-rotation-ledger-verify-promotion requires --index")
+		}
+		if *promotionPath == "" {
+			return errors.New("signer-rotation-ledger-verify-promotion requires --promotion")
+		}
+		if *verifiedAt == "" {
+			return errors.New("signer-rotation-ledger-verify-promotion requires --verified-at")
+		}
+		if *verifiedBy == "" {
+			return errors.New("signer-rotation-ledger-verify-promotion requires --verified-by")
+		}
+		cleanExportPath := filepath.ToSlash(filepath.Clean(*exportPath))
+		var exportPackage project.SignerRotationActivationAuditExportPackage
+		if err := readJSONFile(cleanExportPath, &exportPackage); err != nil {
 			return err
 		}
-		attestation, err := project.BuildSignerRotationActivationAuditRetainedBaselineAttestation(
-			project.SignerRotationActivationAuditRetainedBaselineAttestationRequest{
-				PromotionReceipt: promotionReceipt,
-				AttestedAt:       *attestedAt,
-				AttestationID:    *attestationID,
-			},
-		)
+		var verificationReport project.SignerRotationActivationAuditExportVerificationReport
+		if err := readJSONFile(filepath.Clean(*verifyPath), &verificationReport); err != nil {
+			return err
+		}
+		var archiveIndex project.SignerRotationActivationAuditArchiveIndex
+		if err := readJSONFile(filepath.Clean(*indexPath), &archiveIndex); err != nil {
+			return err
+		}
+		var promotion project.SignerRotationActivationAuditArchivePromotionResult
+		if err := readJSONFile(filepath.Clean(*promotionPath), &promotion); err != nil {
+			return err
+		}
+		receipt, err := project.VerifySignerRotationActivationAuditArchivePromotion(project.SignerRotationActivationAuditArchivePromotionVerificationRequest{
+			PackagePath:        cleanExportPath,
+			ExportPackage:      exportPackage,
+			VerificationReport: verificationReport,
+			ArchiveIndex:       archiveIndex,
+			PromotionResult:    promotion,
+			VerifiedAt:         *verifiedAt,
+			VerifiedBy:         *verifiedBy,
+		})
 		if err != nil {
 			return err
 		}
 		if *out != "" {
-			return project.WriteJSON(filepath.Clean(*out), attestation)
+			if err := project.WriteJSON(filepath.Clean(*out), receipt); err != nil {
+				return err
+			}
+		} else if err := printJSON(receipt); err != nil {
+			return err
 		}
-		return printJSON(attestation)
+		if receipt.Status != "verified" {
+			return errors.New("activation audit archive promotion verification failed")
+		}
+		return nil
+	case "signer-rotation-ledger-retained-inventory":
+		fs := flag.NewFlagSet("signer-rotation-ledger-retained-inventory", flag.ContinueOnError)
+		promotionPaths := fs.String("promotions", "", "comma-separated archive promotion result paths")
+		verificationPaths := fs.String("verification-receipts", "", "comma-separated archive promotion verification receipt paths")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*promotionPaths) == "" {
+			return errors.New("signer-rotation-ledger-retained-inventory requires --promotions")
+		}
+		if strings.TrimSpace(*verificationPaths) == "" {
+			return errors.New("signer-rotation-ledger-retained-inventory requires --verification-receipts")
+		}
+		packages, err := readActivationAuditPromotionPackages(*promotionPaths, *verificationPaths)
+		if err != nil {
+			return err
+		}
+		snapshot, err := project.BuildSignerRotationActivationAuditRetainedInventorySnapshot(project.SignerRotationActivationAuditRetainedInventorySnapshotRequest{
+			Packages: packages,
+		})
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), snapshot); err != nil {
+				return err
+			}
+		} else if err := printJSON(snapshot); err != nil {
+			return err
+		}
+		if snapshot.Status != "consistent" {
+			return errors.New("retained inventory snapshot verification failed")
+		}
+		return nil
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -805,7 +899,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|signer-rotation-ledger-archive-promote|signer-rotation-ledger-attest-retained-baseline|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|signer-rotation-ledger-promote|signer-rotation-ledger-verify-promotion|signer-rotation-ledger-retained-inventory|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
@@ -857,6 +951,39 @@ func readActivationAuditExportPackages(path string) ([]project.SignerRotationAct
 	}
 	if len(collected) == 0 {
 		return nil, fmt.Errorf("no activation audit export packages found in %s", path)
+	}
+	return collected, nil
+}
+
+func readActivationAuditPromotionPackages(promotionPaths string, verificationPaths string) ([]project.SignerRotationActivationAuditRetainedInventoryPackage, error) {
+	promotions := strings.Split(promotionPaths, ",")
+	verifications := strings.Split(verificationPaths, ",")
+	if len(promotions) != len(verifications) {
+		return nil, fmt.Errorf("promotion and verification receipt path counts must match")
+	}
+	collected := make([]project.SignerRotationActivationAuditRetainedInventoryPackage, 0, len(promotions))
+	for idx := range promotions {
+		promotionPath := filepath.Clean(strings.TrimSpace(promotions[idx]))
+		verificationPath := filepath.Clean(strings.TrimSpace(verifications[idx]))
+		if promotionPath == "" || verificationPath == "" {
+			return nil, fmt.Errorf("promotion and verification receipt paths must not be empty")
+		}
+		var promotion project.SignerRotationActivationAuditArchivePromotionResult
+		if err := readJSONFile(promotionPath, &promotion); err != nil {
+			return nil, err
+		}
+		var verification project.SignerRotationActivationAuditArchivePromotionVerificationReceipt
+		if err := readJSONFile(verificationPath, &verification); err != nil {
+			return nil, err
+		}
+		collected = append(collected, project.SignerRotationActivationAuditRetainedInventoryPackage{
+			PromotionPath:       filepath.ToSlash(promotionPath),
+			PromotionResult:     promotion,
+			VerificationReceipt: verification,
+		})
+	}
+	if len(collected) == 0 {
+		return nil, fmt.Errorf("no activation audit archive promotions found")
 	}
 	return collected, nil
 }
