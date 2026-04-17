@@ -1,6 +1,6 @@
 build/localnet/
 build/nodes/
 .cache/
-0aid
+/0aid
 __pycache__/
 *.pyc
