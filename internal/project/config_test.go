@@ -35,6 +35,13 @@ func TestLoadBundle(t *testing.T) {
 	if len(bundle.CheckpointSigners) == 0 {
 		t.Fatal("expected checkpoint signer policy to be loaded")
 	}
+	if len(bundle.CheckpointSigners["signers"].([]any)) != 14 {
+		t.Fatalf("expected 14 checkpoint signers, got %d", len(bundle.CheckpointSigners["signers"].([]any)))
+	}
+	rotationPolicy := bundle.CheckpointSigners["rotation_policy"].(map[string]any)
+	if rotationPolicy["reference_time"] != "2026-04-17T00:00:00Z" {
+		t.Fatalf("unexpected signer rotation reference time: %v", rotationPolicy["reference_time"])
+	}
 	if len(bundle.InferencePolicy) == 0 {
 		t.Fatal("expected inference policy to be loaded")
 	}
