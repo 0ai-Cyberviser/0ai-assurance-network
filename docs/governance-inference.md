@@ -157,6 +157,7 @@ Each event must include:
 - `new_status`
 - `updated_at`
 - `recorded_by`
+- `rationale`
 
 The status file is not treated as an arbitrary snapshot. For non-pending
 updates, operators should provide `previous_status`, `updated_at`, and
@@ -175,9 +176,9 @@ updates without actor attribution or timestamps, and it rejects checkpoint
 updates whose `updated_at` value predates the latest completed dependency.
 
 Event logs add another deterministic guarantee: replay rejects duplicate,
-contradictory, or out-of-order history. That means remediation can consume an
-event log directly without trusting a mutable current-state file as the source
-of truth.
+contradictory, illegal, or out-of-order history. That means remediation can
+consume an event log directly without trusting a mutable current-state file as
+the source of truth.
 
 ## Future Direction
 

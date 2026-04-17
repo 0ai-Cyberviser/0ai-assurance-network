@@ -213,9 +213,18 @@ def replay_checkpoint_state(
             checkpoints={},
         )
 
+    has_events_key = "events" in statuses
     raw_events = statuses.get("events")
-    if isinstance(raw_events, list):
-        return _replay_checkpoint_events(raw_events)
+    if has_events_key:
+        if isinstance(raw_events, list):
+            return _replay_checkpoint_events(raw_events)
+        return GovernanceCheckpointReplay(
+            source_kind="event_log",
+            replay_event_count=0,
+            invalid_event_count=1,
+            event_alerts=["Invalid event log schema: 'events' must be a list."],
+            checkpoints={},
+        )
 
     raw_checkpoints = statuses.get("checkpoints", statuses)
     normalized: dict[str, dict[str, str | None]] = {}
@@ -271,6 +280,10 @@ def replay_checkpoint_state(
 
 def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
     allowed_statuses = {"pending", "in_progress", "completed"}
+    allowed_transitions = {
+        ("pending", "in_progress"),
+        ("in_progress", "completed"),
+    }
     replayed: dict[str, dict[str, str | None]] = {}
     replayed_timestamps: dict[str, datetime] = {}
     event_alerts: list[str] = []
@@ -293,6 +306,7 @@ def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
         new_name = str(new_status).strip().lower() if new_status is not None else ""
         updated_at = str(raw_event.get("updated_at")).strip() if raw_event.get("updated_at") is not None else None
         recorded_by = str(raw_event.get("recorded_by")).strip() if raw_event.get("recorded_by") is not None else None
+        rationale = str(raw_event.get("rationale")).strip() if raw_event.get("rationale") is not None else None
 
         if previous_name not in allowed_statuses:
             event_alerts.append(
@@ -309,6 +323,11 @@ def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
                 f"Event {index} ({checkpoint_id}): duplicate or no-op events are not allowed in the append-only log."
             )
             continue
+        if (previous_name, new_name) not in allowed_transitions:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): illegal lifecycle transition {previous_name} -> {new_name}."
+            )
+            continue
 
         parsed_timestamp = _parse_timestamp(updated_at)
         if parsed_timestamp is None:
@@ -316,6 +335,9 @@ def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
             continue
         if not recorded_by:
             event_alerts.append(f"Event {index} ({checkpoint_id}): missing recorded_by.")
+            continue
+        if not rationale:
+            event_alerts.append(f"Event {index} ({checkpoint_id}): missing rationale.")
             continue
 
         current_state = replayed.get(checkpoint_id)

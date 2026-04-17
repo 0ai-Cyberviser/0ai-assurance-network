@@ -464,6 +464,49 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertTrue(payload["event_alerts"])
         self.assertIn("contradictory event history", payload["event_alerts"][0])
 
+    def test_governance_replay_rejects_illegal_lifecycle_transition(self) -> None:
+        invalid_transition_payload = {
+            "version": "checkpoint-event-log-illegal-transition-test",
+            "events": [
+                {
+                    "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
+                    "previous_status": "pending",
+                    "new_status": "completed",
+                    "updated_at": "2026-04-16T11:01:00Z",
+                    "recorded_by": "treasury-program-manager",
+                    "rationale": "Skipping in-progress should be rejected.",
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-illegal-transition.json"
+            event_path.write_text(json.dumps(invalid_transition_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertIn("illegal lifecycle transition pending -> completed", payload["event_alerts"][0])
+
+    def test_governance_replay_rejects_invalid_event_log_schema(self) -> None:
+        invalid_schema_payload = {
+            "version": "checkpoint-event-log-invalid-schema-test",
+            "events": {"unexpected": "object"},
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-invalid-schema.json"
+            event_path.write_text(json.dumps(invalid_schema_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertEqual(payload["event_alerts"], ["Invalid event log schema: 'events' must be a list."])
+
     def test_governance_remediation_event_log_updates_current_readiness(self) -> None:
         baseline = self.run_cli(
             "governance-remediation",

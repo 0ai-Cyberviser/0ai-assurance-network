@@ -116,8 +116,8 @@ path operationally useful once the engine detects an unstable cluster.
 `governance-replay` reconstructs deterministic current checkpoint state from an
 append-only event log or a derived snapshot. Event logs are stricter than
 snapshots: each event must include `checkpoint_id`, `previous_status`,
-`new_status`, `updated_at`, and `recorded_by`, and replay rejects duplicate,
-contradictory, or out-of-order history.
+`new_status`, `updated_at`, `recorded_by`, and `rationale`, and replay rejects
+duplicate, contradictory, illegal, or out-of-order history.
 
 Status inputs are transition-aware. Each non-pending checkpoint update should
 include `previous_status`, `updated_at`, and `recorded_by`, and the engine only
