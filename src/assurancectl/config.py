@@ -20,6 +20,7 @@ class LoadedConfig:
     topology: dict[str, Any]
     genesis: dict[str, Any]
     policy: dict[str, Any]
+    checkpoint_signers: dict[str, Any]
 
 
 def root_dir(explicit_root: str | Path | None = None) -> Path:
@@ -41,6 +42,7 @@ def load_config(explicit_root: str | Path | None = None) -> LoadedConfig:
         topology=_load_json(config / "network-topology.json"),
         genesis=_load_json(config / "genesis" / "base-genesis.json"),
         policy=_load_json(config / "policy" / "release-guards.json"),
+        checkpoint_signers=_load_json(config / "governance" / "checkpoint-signers.json"),
     )
 
 
@@ -120,7 +122,44 @@ def validate_policy(policy: dict[str, Any]) -> None:
     )
 
 
+def validate_checkpoint_signers(checkpoint_signers: dict[str, Any]) -> None:
+    _assert(
+        checkpoint_signers["signature_format"] == "0ai-hmac-sha256-v1",
+        "checkpoint signer signature_format must be 0ai-hmac-sha256-v1",
+    )
+    _assert(
+        bool(checkpoint_signers["require_signatures_for_event_logs"]),
+        "checkpoint signer policy must require signatures for event logs",
+    )
+    _assert(
+        int(checkpoint_signers["maximum_signature_validity_seconds"]) > 0,
+        "checkpoint signer validity window must be positive",
+    )
+    signers = list(checkpoint_signers["signers"])
+    _assert(signers, "at least one checkpoint signer must be configured")
+
+    signer_ids: set[str] = set()
+    key_ids: set[str] = set()
+    role_bindings: set[str] = set()
+    for signer in signers:
+        signer_id = str(signer["signer_id"])
+        key_id = str(signer["key_id"])
+        shared_secret = str(signer["shared_secret"])
+        roles = [str(role) for role in signer["roles"]]
+        _assert(signer_id not in signer_ids, f"duplicate checkpoint signer_id: {signer_id}")
+        _assert(key_id not in key_ids, f"duplicate checkpoint key_id: {key_id}")
+        _assert(shared_secret != "", f"checkpoint signer {signer_id} must declare a shared_secret")
+        _assert(roles, f"checkpoint signer {signer_id} must declare at least one role")
+        for role in roles:
+            binding = f"{signer_id}:{role}"
+            _assert(binding not in role_bindings, f"duplicate checkpoint signer role binding: {binding}")
+            role_bindings.add(binding)
+        signer_ids.add(signer_id)
+        key_ids.add(key_id)
+
+
 def validate_all(config: LoadedConfig) -> None:
     validate_topology(config.topology)
     validate_genesis(config.genesis, config.topology)
     validate_policy(config.policy)
+    validate_checkpoint_signers(config.checkpoint_signers)

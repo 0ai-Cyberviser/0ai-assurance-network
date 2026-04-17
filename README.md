@@ -117,7 +117,21 @@ path operationally useful once the engine detects an unstable cluster.
 append-only event log or a derived snapshot. Event logs are stricter than
 snapshots: each event must include `checkpoint_id`, `previous_status`,
 `new_status`, `updated_at`, `recorded_by`, and `rationale`, and replay rejects
-duplicate, contradictory, illegal, or out-of-order history.
+duplicate, contradictory, illegal, or out-of-order history. Signed event logs
+must also include a `signature` object with:
+
+- `format`
+- `signer_id`
+- `key_id`
+- `signature_id`
+- `signed_at`
+- `expires_at`
+- `value`
+
+Signer-to-role policy lives in
+`config/governance/checkpoint-signers.json`. The current repository ships
+development-only HMAC signers so the pre-launch testnet can exercise
+authenticated updates without pretending to solve production custody.
 
 Status inputs are transition-aware. Each non-pending checkpoint update should
 include `previous_status`, `updated_at`, and `recorded_by`, and the engine only
@@ -126,6 +140,16 @@ accepts lifecycle moves that stay inside the deterministic path
 ordering so downstream checkpoints cannot appear to complete before the latest
 completed prerequisite. Remediation accepts either a derived checkpoint snapshot
 or a replayable append-only event log via `--status`.
+
+For event logs, non-pending updates are only accepted when the signature is
+valid, the signer is authorized for the `recorded_by` role, and the update falls
+inside the signature validity window. Reused `signature_id` values are rejected
+as replay attempts.
+
+Rejected or expired signatures are surfaced as event alerts during
+`governance-replay`, and any remediation run consuming that event log moves the
+affected cluster to `current_release_readiness = invalid` until the bad update
+is replaced with a new signed record.
 
 `go-build` and `go-test` operate on the `0aid` binary skeleton and the internal
 Go project package.

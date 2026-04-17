@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import subprocess
 import sys
@@ -24,6 +26,68 @@ class AssuranceCtlTests(unittest.TestCase):
             check=False,
         )
 
+    def load_checkpoint_signer_policy(self) -> dict[str, object]:
+        return json.loads(
+            (PROJECT_ROOT / "config" / "governance" / "checkpoint-signers.json").read_text(encoding="utf-8")
+        )
+
+    def build_signed_event(
+        self,
+        *,
+        checkpoint_id: str,
+        previous_status: str,
+        new_status: str,
+        updated_at: str,
+        recorded_by: str,
+        rationale: str,
+        signature_id: str,
+        signer_id: str | None = None,
+    ) -> dict[str, object]:
+        signer_policy = self.load_checkpoint_signer_policy()
+        signers = signer_policy["signers"]
+        if signer_id is None:
+            signer_entry = next(entry for entry in signers if recorded_by in entry["roles"])
+        else:
+            signer_entry = next(entry for entry in signers if entry["signer_id"] == signer_id)
+        signature_meta = {
+            "format": signer_policy["signature_format"],
+            "signer_id": signer_entry["signer_id"],
+            "key_id": signer_entry["key_id"],
+            "signature_id": signature_id,
+            "signed_at": "2026-04-16T10:00:00Z",
+            "expires_at": "2026-04-17T10:00:00Z",
+        }
+        message = json.dumps(
+            {
+                "checkpoint_id": checkpoint_id,
+                "previous_status": previous_status,
+                "new_status": new_status,
+                "updated_at": updated_at,
+                "recorded_by": recorded_by,
+                "rationale": rationale,
+                "signature": signature_meta,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        signature_value = hmac.new(
+            str(signer_entry["shared_secret"]).encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "checkpoint_id": checkpoint_id,
+            "previous_status": previous_status,
+            "new_status": new_status,
+            "updated_at": updated_at,
+            "recorded_by": recorded_by,
+            "rationale": rationale,
+            "signature": {
+                **signature_meta,
+                "value": signature_value,
+            },
+        }
+
     def build_treasury_event_log(self, checkpoints: list[dict[str, object]]) -> dict[str, object]:
         event_payload: dict[str, object] = {"version": "checkpoint-event-log-test", "events": []}
         events = event_payload["events"]
@@ -36,35 +100,38 @@ class AssuranceCtlTests(unittest.TestCase):
             if phase in {"immediate_action", "approval_guardrail"}:
                 completed_counter += 1
                 events.append(
-                    {
-                        "checkpoint_id": checkpoint_id,
-                        "previous_status": "pending",
-                        "new_status": "in_progress",
-                        "updated_at": f"2026-04-16T11:{completed_counter:02d}:00Z",
-                        "recorded_by": owner_role,
-                        "rationale": f"Started {checkpoint_id}.",
-                    }
+                    self.build_signed_event(
+                        checkpoint_id=checkpoint_id,
+                        previous_status="pending",
+                        new_status="in_progress",
+                        updated_at=f"2026-04-16T11:{completed_counter:02d}:00Z",
+                        recorded_by=owner_role,
+                        rationale=f"Started {checkpoint_id}.",
+                        signature_id=f"{checkpoint_id}-start",
+                    )
                 )
                 events.append(
-                    {
-                        "checkpoint_id": checkpoint_id,
-                        "previous_status": "in_progress",
-                        "new_status": "completed",
-                        "updated_at": f"2026-04-16T12:{completed_counter:02d}:00Z",
-                        "recorded_by": owner_role,
-                        "rationale": f"Completed {checkpoint_id}.",
-                    }
+                    self.build_signed_event(
+                        checkpoint_id=checkpoint_id,
+                        previous_status="in_progress",
+                        new_status="completed",
+                        updated_at=f"2026-04-16T12:{completed_counter:02d}:00Z",
+                        recorded_by=owner_role,
+                        rationale=f"Completed {checkpoint_id}.",
+                        signature_id=f"{checkpoint_id}-complete",
+                    )
                 )
             elif phase == "monitoring" and checkpoint_id.endswith("-1"):
                 events.append(
-                    {
-                        "checkpoint_id": checkpoint_id,
-                        "previous_status": "pending",
-                        "new_status": "in_progress",
-                        "updated_at": "2026-04-16T13:00:00Z",
-                        "recorded_by": owner_role,
-                        "rationale": f"Started monitoring for {checkpoint_id}.",
-                    }
+                    self.build_signed_event(
+                        checkpoint_id=checkpoint_id,
+                        previous_status="pending",
+                        new_status="in_progress",
+                        updated_at="2026-04-16T13:00:00Z",
+                        recorded_by=owner_role,
+                        rationale=f"Started monitoring for {checkpoint_id}.",
+                        signature_id=f"{checkpoint_id}-monitoring",
+                    )
                 )
         return event_payload
 
@@ -100,8 +167,10 @@ class AssuranceCtlTests(unittest.TestCase):
                 ("config/network-topology.json", "config/network-topology.json"),
                 ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
                 ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
             ):
                 target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
 
             env = {"PYTHONPATH": PYTHONPATH}
@@ -433,22 +502,24 @@ class AssuranceCtlTests(unittest.TestCase):
         duplicate_payload = {
             "version": "checkpoint-event-log-duplicate-test",
             "events": [
-                {
-                    "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
-                    "previous_status": "pending",
-                    "new_status": "in_progress",
-                    "updated_at": "2026-04-16T11:01:00Z",
-                    "recorded_by": "treasury-program-manager",
-                    "rationale": "Started milestone release planning.",
-                },
-                {
-                    "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
-                    "previous_status": "pending",
-                    "new_status": "in_progress",
-                    "updated_at": "2026-04-16T11:02:00Z",
-                    "recorded_by": "treasury-program-manager",
-                    "rationale": "Duplicate write should be rejected.",
-                },
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="in_progress",
+                    updated_at="2026-04-16T11:01:00Z",
+                    recorded_by="treasury-program-manager",
+                    rationale="Started milestone release planning.",
+                    signature_id="duplicate-1",
+                ),
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="in_progress",
+                    updated_at="2026-04-16T11:02:00Z",
+                    recorded_by="treasury-program-manager",
+                    rationale="Duplicate write should be rejected.",
+                    signature_id="duplicate-2",
+                ),
             ],
         }
 
@@ -468,14 +539,15 @@ class AssuranceCtlTests(unittest.TestCase):
         invalid_transition_payload = {
             "version": "checkpoint-event-log-illegal-transition-test",
             "events": [
-                {
-                    "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
-                    "previous_status": "pending",
-                    "new_status": "completed",
-                    "updated_at": "2026-04-16T11:01:00Z",
-                    "recorded_by": "treasury-program-manager",
-                    "rationale": "Skipping in-progress should be rejected.",
-                }
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="completed",
+                    updated_at="2026-04-16T11:01:00Z",
+                    recorded_by="treasury-program-manager",
+                    rationale="Skipping in-progress should be rejected.",
+                    signature_id="illegal-transition-1",
+                )
             ],
         }
 
@@ -489,6 +561,139 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertEqual(payload["source_kind"], "event_log")
         self.assertEqual(payload["invalid_event_count"], 1)
         self.assertIn("illegal lifecycle transition pending -> completed", payload["event_alerts"][0])
+
+    def test_governance_replay_rejects_invalid_signature(self) -> None:
+        signed_event = self.build_signed_event(
+            checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+            previous_status="pending",
+            new_status="in_progress",
+            updated_at="2026-04-16T11:01:00Z",
+            recorded_by="treasury-program-manager",
+            rationale="Started milestone release planning.",
+            signature_id="invalid-signature-1",
+        )
+        signature = signed_event["signature"]
+        assert isinstance(signature, dict)
+        signature["value"] = "0" * 64
+        invalid_signature_payload = {
+            "version": "checkpoint-event-log-invalid-signature-test",
+            "events": [signed_event],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-invalid-signature.json"
+            event_path.write_text(json.dumps(invalid_signature_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertIn("invalid signature", payload["event_alerts"][0])
+
+    def test_governance_replay_rejects_wrong_role_signer(self) -> None:
+        wrong_role_payload = {
+            "version": "checkpoint-event-log-wrong-role-test",
+            "events": [
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="in_progress",
+                    updated_at="2026-04-16T11:01:00Z",
+                    recorded_by="treasury-program-manager",
+                    rationale="Started milestone release planning.",
+                    signature_id="wrong-role-1",
+                    signer_id="treasury-review-chair-bot",
+                )
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-wrong-role.json"
+            event_path.write_text(json.dumps(wrong_role_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertIn("is not authorized for role treasury-program-manager", payload["event_alerts"][0])
+
+    def test_governance_replay_rejects_signature_replay_attempt(self) -> None:
+        replayed_signature_payload = {
+            "version": "checkpoint-event-log-replay-test",
+            "events": [
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="in_progress",
+                    updated_at="2026-04-16T11:01:00Z",
+                    recorded_by="treasury-program-manager",
+                    rationale="Started milestone release planning.",
+                    signature_id="replay-attempt-1",
+                ),
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="in_progress",
+                    new_status="completed",
+                    updated_at="2026-04-16T12:01:00Z",
+                    recorded_by="treasury-program-manager",
+                    rationale="Milestone release plan approved.",
+                    signature_id="replay-attempt-1",
+                ),
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-replay-attempt.json"
+            event_path.write_text(json.dumps(replayed_signature_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertIn("replay attempt detected", payload["event_alerts"][0])
+
+    def test_governance_remediation_rejects_checkpoint_owner_role_mismatch(self) -> None:
+        wrong_owner_payload = {
+            "version": "checkpoint-event-log-owner-mismatch-test",
+            "events": [
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="in_progress",
+                    updated_at="2026-04-16T11:01:00Z",
+                    recorded_by="treasury-review-chair",
+                    rationale="Wrong phase owner should be rejected during remediation.",
+                    signature_id="owner-mismatch-1",
+                    signer_id="treasury-review-chair-bot",
+                )
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-owner-mismatch.json"
+            event_path.write_text(json.dumps(wrong_owner_payload), encoding="utf-8")
+            result = self.run_cli(
+                "governance-remediation",
+                "--registry",
+                "examples/proposals/registry.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--status",
+                str(event_path),
+                "--json",
+            )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        treasury_plan = next(item for item in payload if item["trend_cluster"] == "treasury_grant:0ai-core")
+        self.assertEqual(treasury_plan["current_release_readiness"], "invalid")
+        self.assertGreater(treasury_plan["invalid_audit_count"], 0)
+        self.assertTrue(
+            any("Checkpoint actor role mismatch" in alert for alert in treasury_plan["audit_alerts"])
+        )
 
     def test_governance_replay_rejects_invalid_event_log_schema(self) -> None:
         invalid_schema_payload = {
