@@ -24,6 +24,50 @@ class AssuranceCtlTests(unittest.TestCase):
             check=False,
         )
 
+    def build_treasury_event_log(self, checkpoints: list[dict[str, object]]) -> dict[str, object]:
+        event_payload: dict[str, object] = {"version": "checkpoint-event-log-test", "events": []}
+        events = event_payload["events"]
+        assert isinstance(events, list)
+        completed_counter = 0
+        for checkpoint in checkpoints:
+            checkpoint_id = str(checkpoint["checkpoint_id"])
+            owner_role = str(checkpoint["owner_role"])
+            phase = str(checkpoint["phase"])
+            if phase in {"immediate_action", "approval_guardrail"}:
+                completed_counter += 1
+                events.append(
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "previous_status": "pending",
+                        "new_status": "in_progress",
+                        "updated_at": f"2026-04-16T11:{completed_counter:02d}:00Z",
+                        "recorded_by": owner_role,
+                        "rationale": f"Started {checkpoint_id}.",
+                    }
+                )
+                events.append(
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "previous_status": "in_progress",
+                        "new_status": "completed",
+                        "updated_at": f"2026-04-16T12:{completed_counter:02d}:00Z",
+                        "recorded_by": owner_role,
+                        "rationale": f"Completed {checkpoint_id}.",
+                    }
+                )
+            elif phase == "monitoring" and checkpoint_id.endswith("-1"):
+                events.append(
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "previous_status": "pending",
+                        "new_status": "in_progress",
+                        "updated_at": "2026-04-16T13:00:00Z",
+                        "recorded_by": owner_role,
+                        "rationale": f"Started monitoring for {checkpoint_id}.",
+                    }
+                )
+        return event_payload
+
     def test_validate_passes(self) -> None:
         result = self.run_cli("validate")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -352,6 +396,110 @@ class AssuranceCtlTests(unittest.TestCase):
                 if checkpoint["phase"] == "monitoring"
             )
         )
+
+    def test_governance_replay_reconstructs_checkpoint_state_from_event_log(self) -> None:
+        baseline = self.run_cli(
+            "governance-remediation",
+            "--registry",
+            "examples/proposals/registry.json",
+            "--history",
+            "examples/proposals/history.json",
+            "--json",
+        )
+        self.assertEqual(baseline.returncode, 2, baseline.stdout + baseline.stderr)
+        baseline_payload = json.loads(baseline.stdout)
+        treasury = next(item for item in baseline_payload if item["trend_cluster"] == "treasury_grant:0ai-core")
+        event_payload = self.build_treasury_event_log(treasury["checkpoints"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events.json"
+            event_path.write_text(json.dumps(event_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 0)
+        self.assertGreater(payload["replay_event_count"], 0)
+        monitoring = next(
+            checkpoint
+            for checkpoint in payload["checkpoints"]
+            if checkpoint["checkpoint_id"] == "treasury-grant-0ai-core-monitoring-1"
+        )
+        self.assertEqual(monitoring["status"], "in_progress")
+        self.assertEqual(monitoring["recorded_by"], "finance-telemetry-lead")
+
+    def test_governance_replay_rejects_duplicate_events(self) -> None:
+        duplicate_payload = {
+            "version": "checkpoint-event-log-duplicate-test",
+            "events": [
+                {
+                    "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
+                    "previous_status": "pending",
+                    "new_status": "in_progress",
+                    "updated_at": "2026-04-16T11:01:00Z",
+                    "recorded_by": "treasury-program-manager",
+                    "rationale": "Started milestone release planning.",
+                },
+                {
+                    "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
+                    "previous_status": "pending",
+                    "new_status": "in_progress",
+                    "updated_at": "2026-04-16T11:02:00Z",
+                    "recorded_by": "treasury-program-manager",
+                    "rationale": "Duplicate write should be rejected.",
+                },
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-duplicate.json"
+            event_path.write_text(json.dumps(duplicate_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertTrue(payload["event_alerts"])
+        self.assertIn("contradictory event history", payload["event_alerts"][0])
+
+    def test_governance_remediation_event_log_updates_current_readiness(self) -> None:
+        baseline = self.run_cli(
+            "governance-remediation",
+            "--registry",
+            "examples/proposals/registry.json",
+            "--history",
+            "examples/proposals/history.json",
+            "--json",
+        )
+        self.assertEqual(baseline.returncode, 2, baseline.stdout + baseline.stderr)
+        baseline_payload = json.loads(baseline.stdout)
+        treasury = next(item for item in baseline_payload if item["trend_cluster"] == "treasury_grant:0ai-core")
+        event_payload = self.build_treasury_event_log(treasury["checkpoints"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-remediation.json"
+            event_path.write_text(json.dumps(event_payload), encoding="utf-8")
+            result = self.run_cli(
+                "governance-remediation",
+                "--registry",
+                "examples/proposals/registry.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--status",
+                str(event_path),
+                "--json",
+            )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        treasury_updated = next(item for item in payload if item["trend_cluster"] == "treasury_grant:0ai-core")
+        self.assertEqual(treasury_updated["current_release_readiness"], "monitoring")
+        self.assertEqual(treasury_updated["invalid_event_count"], 0)
+        self.assertEqual(treasury_updated["invalid_transition_count"], 0)
+        self.assertEqual(treasury_updated["invalid_audit_count"], 0)
+        self.assertGreater(treasury_updated["replay_event_count"], 0)
 
     def test_governance_remediation_invalid_transition_marks_plan_invalid(self) -> None:
         baseline = self.run_cli(

@@ -66,6 +66,7 @@ make -C projects/0ai-assurance-network governance-sim PROPOSAL=examples/proposal
 make -C projects/0ai-assurance-network governance-queue REGISTRY=examples/proposals/registry.json
 make -C projects/0ai-assurance-network governance-trends REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json
 make -C projects/0ai-assurance-network governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json
+make -C projects/0ai-assurance-network governance-replay STATUS=examples/proposals/checkpoint-events.json
 make -C projects/0ai-assurance-network governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json
 make -C projects/0ai-assurance-network go-build
 make -C projects/0ai-assurance-network go-test
@@ -112,12 +113,19 @@ owner roles, completion criteria, dependency ordering between phases, and
 status-aware rollups for current execution readiness. That keeps the governance
 path operationally useful once the engine detects an unstable cluster.
 
-Status files are transition-aware. Each non-pending checkpoint update should
+`governance-replay` reconstructs deterministic current checkpoint state from an
+append-only event log or a derived snapshot. Event logs are stricter than
+snapshots: each event must include `checkpoint_id`, `previous_status`,
+`new_status`, `updated_at`, and `recorded_by`, and replay rejects duplicate,
+contradictory, or out-of-order history.
+
+Status inputs are transition-aware. Each non-pending checkpoint update should
 include `previous_status`, `updated_at`, and `recorded_by`, and the engine only
 accepts lifecycle moves that stay inside the deterministic path
 `pending -> in_progress -> completed`. It also validates dependency timestamp
 ordering so downstream checkpoints cannot appear to complete before the latest
-completed prerequisite.
+completed prerequisite. Remediation accepts either a derived checkpoint snapshot
+or a replayable append-only event log via `--status`.
 
 `go-build` and `go-test` operate on the `0aid` binary skeleton and the internal
 Go project package.
@@ -156,6 +164,8 @@ PYTHONPATH=src python -m assurancectl.cli governance-remediation \
   --registry examples/proposals/registry.json \
   --history examples/proposals/history.json \
   --status examples/proposals/checkpoint-status.json
+PYTHONPATH=src python -m assurancectl.cli governance-replay \
+  --status examples/proposals/checkpoint-events.json
 PYTHONPATH=src python -m assurancectl.cli governance-drift \
   --proposal examples/proposals/emergency-pause.json \
   --history examples/proposals/history.json

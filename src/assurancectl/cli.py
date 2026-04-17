@@ -18,6 +18,7 @@ from .inference import (
     load_inference_policy,
     load_proposal,
     load_registry,
+    replay_checkpoint_state,
 )
 from .readiness import build_readiness_report
 from .render import write_localnet_artifacts
@@ -57,6 +58,13 @@ def _parser() -> argparse.ArgumentParser:
     remediation.add_argument("--history", required=True, help="governance history JSON file path")
     remediation.add_argument("--status", help="checkpoint status JSON file path")
     remediation.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+    replay = subparsers.add_parser(
+        "governance-replay",
+        help="replay a checkpoint event log or snapshot into current checkpoint state",
+    )
+    replay.add_argument("--status", required=True, help="checkpoint state or event log JSON file path")
+    replay.add_argument("--json", action="store_true", help="emit machine-readable JSON")
 
     drift = subparsers.add_parser("governance-drift", help="compare a proposal against governance history")
     drift.add_argument("--proposal", required=True, help="proposal JSON file path")
@@ -296,6 +304,46 @@ def _print_governance_trends(trends, emit_json: bool) -> None:
         print(f"   summary: {trend.summary}")
 
 
+def _print_governance_replay(replay, emit_json: bool) -> None:
+    payload = {
+        "source_kind": replay.source_kind,
+        "replay_event_count": replay.replay_event_count,
+        "invalid_event_count": replay.invalid_event_count,
+        "event_alerts": replay.event_alerts,
+        "checkpoints": [
+            {
+                "checkpoint_id": checkpoint_id,
+                "previous_status": checkpoint_state.get("previous_status"),
+                "updated_at": checkpoint_state.get("updated_at"),
+                "recorded_by": checkpoint_state.get("recorded_by"),
+                "status": checkpoint_state.get("status"),
+            }
+            for checkpoint_id, checkpoint_state in sorted(replay.checkpoints.items())
+        ],
+    }
+    if emit_json:
+        print(json.dumps(payload, indent=2))
+        return
+
+    print(f"Replay source: {replay.source_kind}")
+    print(f"Replayed events: {replay.replay_event_count}")
+    print(f"Invalid events: {replay.invalid_event_count}")
+    if replay.event_alerts:
+        print("Event alerts:")
+        for item in replay.event_alerts:
+            print(f"  - {item}")
+    print(f"Checkpoint states: {len(replay.checkpoints)}")
+    for checkpoint_id, checkpoint_state in sorted(replay.checkpoints.items()):
+        print(
+            f"  - {checkpoint_id}: {checkpoint_state.get('previous_status')} -> "
+            f"{checkpoint_state.get('status')}"
+        )
+        if checkpoint_state.get("updated_at"):
+            print(f"    updated: {checkpoint_state.get('updated_at')}")
+        if checkpoint_state.get("recorded_by"):
+            print(f"    by: {checkpoint_state.get('recorded_by')}")
+
+
 def _print_governance_remediation(plans, emit_json: bool) -> None:
     payload = [
         {
@@ -309,8 +357,11 @@ def _print_governance_remediation(plans, emit_json: bool) -> None:
             "current_release_readiness": plan.current_release_readiness,
             "owner_roles": plan.owner_roles,
             "checkpoint_status_counts": plan.checkpoint_status_counts,
+            "replay_event_count": plan.replay_event_count,
+            "invalid_event_count": plan.invalid_event_count,
             "invalid_transition_count": plan.invalid_transition_count,
             "invalid_audit_count": plan.invalid_audit_count,
+            "event_alerts": plan.event_alerts,
             "transition_alerts": plan.transition_alerts,
             "audit_alerts": plan.audit_alerts,
             "progress_summary": plan.progress_summary,
@@ -355,10 +406,13 @@ def _print_governance_remediation(plans, emit_json: bool) -> None:
         print(f"   owner: {plan.owner}")
         print(f"   release readiness: {plan.release_readiness}")
         print(f"   current readiness: {plan.current_release_readiness}")
+        print(f"   replayed events: {plan.replay_event_count}")
         if plan.owner_roles:
             print(f"   owner roles: {', '.join(plan.owner_roles)}")
         if plan.triggers:
             print(f"   triggers: {', '.join(plan.triggers)}")
+        if plan.event_alerts:
+            print(f"   event alerts: {'; '.join(plan.event_alerts)}")
         if plan.transition_alerts:
             print(f"   transition alerts: {'; '.join(plan.transition_alerts)}")
         if plan.audit_alerts:
@@ -509,6 +563,12 @@ def main(argv: list[str] | None = None) -> int:
             if all(plan.current_release_readiness in {"monitoring", "complete"} for plan in plans)
             else 2
         )
+
+    if args.command == "governance-replay":
+        checkpoint_statuses = load_checkpoint_statuses(args.status)
+        replay = replay_checkpoint_state(checkpoint_statuses)
+        _print_governance_replay(replay, emit_json=args.json)
+        return 0 if replay.invalid_event_count == 0 else 2
 
     if args.command == "governance-drift":
         proposal = load_proposal(args.proposal)
