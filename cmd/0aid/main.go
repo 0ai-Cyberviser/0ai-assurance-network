@@ -489,6 +489,68 @@ func run(args []string) error {
 			return printJSON(exportPackage)
 		}
 		return project.WriteJSON(filepath.Clean(*out), exportPackage)
+	case "signer-rotation-ledger-verify-export":
+		fs := flag.NewFlagSet("signer-rotation-ledger-verify-export", flag.ContinueOnError)
+		exportPath := fs.String("export", "", "activation audit export package path")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *exportPath == "" {
+			return errors.New("signer-rotation-ledger-verify-export requires --export")
+		}
+		var exportPackage project.SignerRotationActivationAuditExportPackage
+		if err := readJSONFile(filepath.Clean(*exportPath), &exportPackage); err != nil {
+			return err
+		}
+		report, err := project.SignerRotationActivationAuditVerifyExport(project.SignerRotationActivationAuditExportVerificationRequest{
+			ExportPackage: exportPackage,
+		})
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), report); err != nil {
+				return err
+			}
+		} else if err := printJSON(report); err != nil {
+			return err
+		}
+		if report.Status == "invalid" {
+			return errors.New("activation audit export verification failed")
+		}
+		return nil
+	case "signer-rotation-ledger-archive-index":
+		fs := flag.NewFlagSet("signer-rotation-ledger-archive-index", flag.ContinueOnError)
+		exportPaths := fs.String("exports", "", "comma-separated activation audit export package paths")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*exportPaths) == "" {
+			return errors.New("signer-rotation-ledger-archive-index requires --exports")
+		}
+		packages, err := readActivationAuditExportPackages(*exportPaths)
+		if err != nil {
+			return err
+		}
+		index, err := project.BuildSignerRotationActivationAuditArchiveIndex(project.SignerRotationActivationAuditArchiveIndexRequest{
+			Packages: packages,
+		})
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), index); err != nil {
+				return err
+			}
+		} else if err := printJSON(index); err != nil {
+			return err
+		}
+		if index.Status == "invalid" {
+			return errors.New("activation audit archive index verification failed")
+		}
+		return nil
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -657,7 +719,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
@@ -688,6 +750,29 @@ func readActivationAuditLedger(path string) (project.SignerRotationActivationAud
 		return ledger, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return ledger, nil
+}
+
+func readActivationAuditExportPackages(path string) ([]project.SignerRotationActivationAuditArchivePackage, error) {
+	paths := strings.Split(path, ",")
+	collected := make([]project.SignerRotationActivationAuditArchivePackage, 0, len(paths))
+	for _, rawPath := range paths {
+		cleanPath := filepath.Clean(strings.TrimSpace(rawPath))
+		if cleanPath == "" {
+			continue
+		}
+		var exportPackage project.SignerRotationActivationAuditExportPackage
+		if err := readJSONFile(cleanPath, &exportPackage); err != nil {
+			return nil, err
+		}
+		collected = append(collected, project.SignerRotationActivationAuditArchivePackage{
+			PackagePath:   filepath.ToSlash(cleanPath),
+			ExportPackage: exportPackage,
+		})
+	}
+	if len(collected) == 0 {
+		return nil, fmt.Errorf("no activation audit export packages found in %s", path)
+	}
+	return collected, nil
 }
 
 func readSignerRotationApprovals(path string) ([]project.SignerRotationApproval, error) {
