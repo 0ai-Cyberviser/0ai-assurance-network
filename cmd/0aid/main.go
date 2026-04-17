@@ -551,6 +551,81 @@ func run(args []string) error {
 			return errors.New("activation audit archive index verification failed")
 		}
 		return nil
+	case "signer-rotation-ledger-promote":
+		fs := flag.NewFlagSet("signer-rotation-ledger-promote", flag.ContinueOnError)
+		exportPath := fs.String("export", "", "activation audit export package path")
+		verifyPath := fs.String("verify", "", "activation audit export verification report path")
+		indexPath := fs.String("index", "", "activation audit archive index path")
+		promotedAt := fs.String("promoted-at", "", "promotion timestamp (RFC3339)")
+		promotedBy := fs.String("promoted-by", "", "operator or automation actor recording promotion")
+		out := fs.String("out", "", "output file path")
+		receiptOut := fs.String("receipt-out", "", "promotion receipt output file path")
+		attestationOut := fs.String("attestation-out", "", "retained baseline attestation output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *exportPath == "" {
+			return errors.New("signer-rotation-ledger-promote requires --export")
+		}
+		if *verifyPath == "" {
+			return errors.New("signer-rotation-ledger-promote requires --verify")
+		}
+		if *indexPath == "" {
+			return errors.New("signer-rotation-ledger-promote requires --index")
+		}
+		if *promotedAt == "" {
+			return errors.New("signer-rotation-ledger-promote requires --promoted-at")
+		}
+		if *promotedBy == "" {
+			return errors.New("signer-rotation-ledger-promote requires --promoted-by")
+		}
+		cleanExportPath := filepath.ToSlash(filepath.Clean(*exportPath))
+		var exportPackage project.SignerRotationActivationAuditExportPackage
+		if err := readJSONFile(cleanExportPath, &exportPackage); err != nil {
+			return err
+		}
+		var verificationReport project.SignerRotationActivationAuditExportVerificationReport
+		if err := readJSONFile(filepath.Clean(*verifyPath), &verificationReport); err != nil {
+			return err
+		}
+		var archiveIndex project.SignerRotationActivationAuditArchiveIndex
+		if err := readJSONFile(filepath.Clean(*indexPath), &archiveIndex); err != nil {
+			return err
+		}
+		promotion, err := project.BuildSignerRotationActivationAuditArchivePromotion(project.SignerRotationActivationAuditArchivePromotionRequest{
+			PackagePath:        cleanExportPath,
+			ExportPackage:      exportPackage,
+			VerificationReport: verificationReport,
+			ArchiveIndex:       archiveIndex,
+			PromotedAt:         *promotedAt,
+			PromotedBy:         *promotedBy,
+		})
+		if err != nil {
+			return err
+		}
+		if *receiptOut != "" {
+			if err := project.WriteJSON(filepath.Clean(*receiptOut), promotion.PromotionReceipt); err != nil {
+				return err
+			}
+		}
+		if *attestationOut != "" {
+			if err := project.WriteJSON(filepath.Clean(*attestationOut), promotion.RetainedBaselineAttestation); err != nil {
+				return err
+			}
+		}
+		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), promotion); err != nil {
+				return err
+			}
+		} else if *receiptOut == "" && *attestationOut == "" {
+			if err := printJSON(promotion); err != nil {
+				return err
+			}
+		}
+		if promotion.Status != "promoted" {
+			return errors.New("activation audit archive promotion failed")
+		}
+		return nil
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -719,7 +794,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|signer-rotation-ledger-promote|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
