@@ -1,0 +1,138 @@
+{
+  "version": "1.0.0",
+  "chain_id": "0ai-assurance-1",
+  "actors": [
+    {
+      "actor_id": "org-0ai-core",
+      "actor_type": "organization",
+      "display_name": "0AI Core",
+      "status": "active"
+    },
+    {
+      "actor_id": "org-assurance-audit",
+      "actor_type": "organization",
+      "display_name": "0AI Assurance Audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "org-safety-council",
+      "actor_type": "council",
+      "display_name": "0AI Safety Council",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-network-admin-1",
+      "actor_type": "operator",
+      "display_name": "Network Admin 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-registry-1",
+      "actor_type": "operator",
+      "display_name": "Registry Operator 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-registry-review-1",
+      "actor_type": "operator",
+      "display_name": "Registry Reviewer 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-auditor-1",
+      "actor_type": "operator",
+      "display_name": "Auditor Operator 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-attestation-review-1",
+      "actor_type": "operator",
+      "display_name": "Attestation Reviewer 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-governance-admin-1",
+      "actor_type": "operator",
+      "display_name": "Governance Admin 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-validator-ops-1",
+      "actor_type": "operator",
+      "display_name": "Validator Ops Lead 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-safety-council-1",
+      "actor_type": "operator",
+      "display_name": "Safety Council Delegate 1",
+      "organization_id": "org-safety-council",
+      "status": "active"
+    }
+  ],
+  "role_bindings": [
+    {
+      "actor_id": "op-network-admin-1",
+      "role": "network_admin",
+      "scope": "network",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-registry-1",
+      "role": "registry_operator",
+      "scope": "registry",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-registry-review-1",
+      "role": "registry_reviewer",
+      "scope": "registry",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-auditor-1",
+      "role": "auditor_operator",
+      "scope": "attestation",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-attestation-review-1",
+      "role": "attestation_reviewer",
+      "scope": "attestation",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-governance-admin-1",
+      "role": "governance_admin",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-validator-ops-1",
+      "role": "validator_ops_lead",
+      "scope": "validator_rollout",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-safety-council-1",
+      "role": "safety_council_delegate",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    }
+  ]
+}
