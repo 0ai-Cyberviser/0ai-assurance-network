@@ -120,6 +120,78 @@ func run(args []string) error {
 			return err
 		}
 		return project.WriteNodeInitBundle(filepath.Clean(*out), nodeBundle)
+	case "collect-validator":
+		fs := flag.NewFlagSet("collect-validator", flag.ContinueOnError)
+		bundlePath := fs.String("bundle", "", "node bundle directory")
+		out := fs.String("out", "", "collected manifest output path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *bundlePath == "" {
+			return errors.New("collect-validator requires --bundle")
+		}
+		if *out == "" {
+			return errors.New("collect-validator requires --out")
+		}
+		manifest, err := project.CollectValidatorBundle(filepath.Clean(*bundlePath))
+		if err != nil {
+			return err
+		}
+		return project.WriteCollectedValidator(filepath.Clean(*out), manifest)
+	case "assemble-genesis":
+		fs := flag.NewFlagSet("assemble-genesis", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		collection := fs.String("collection", "", "directory containing collected validator manifests")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *collection == "" {
+			return errors.New("assemble-genesis requires --collection")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		manifests, err := project.LoadCollectedValidators(filepath.Clean(*collection))
+		if err != nil {
+			return err
+		}
+		plan, err := project.AssembleGenesisPlan(bundle, manifests)
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(plan)
+		}
+		return project.WriteJSON(filepath.Clean(*out), plan)
+	case "assemble-localnet":
+		fs := flag.NewFlagSet("assemble-localnet", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		collection := fs.String("collection", "", "directory containing collected validator manifests")
+		out := fs.String("out", "", "output directory")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *collection == "" {
+			return errors.New("assemble-localnet requires --collection")
+		}
+		if *out == "" {
+			return errors.New("assemble-localnet requires --out")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		manifests, err := project.LoadCollectedValidators(filepath.Clean(*collection))
+		if err != nil {
+			return err
+		}
+		localnetBundle, err := project.RenderCollectedLocalnetBundle(bundle, manifests)
+		if err != nil {
+			return err
+		}
+		return project.WriteCollectedLocalnetBundle(filepath.Clean(*out), localnetBundle)
 	default:
 		return usageError()
 	}
@@ -127,7 +199,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|show-plan|init-genesis|render-validator|render-identity|init-node> [flags]",
+		"usage: 0aid <version|module-map|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 

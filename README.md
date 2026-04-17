@@ -71,6 +71,9 @@ make -C projects/0ai-assurance-network governance-drift PROPOSAL=examples/propos
 make -C projects/0ai-assurance-network go-build
 make -C projects/0ai-assurance-network go-test
 make -C projects/0ai-assurance-network init-node ID=val-3
+make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
+make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
+make -C projects/0ai-assurance-network assemble-localnet COLLECTION=build/collection OUT=build/assembled
 ```
 
 `validate` checks that the topology, genesis, and governance policy files are
@@ -168,12 +171,18 @@ currently supports:
 - `render-validator`
 - `render-identity`
 - `init-node`
+- `collect-validator`
+- `assemble-genesis`
+- `assemble-localnet`
 
 Bootstrap examples:
 
 ```bash
 ./0aid render-identity --root . --id val-3
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
+./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
+./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json
+./0aid assemble-localnet --root . --collection ./build/collection --out ./build/assembled
 PYTHONPATH=src python -m assurancectl.cli governance-sim \
   --proposal examples/proposals/emergency-pause.json
 PYTHONPATH=src python -m assurancectl.cli governance-queue \
@@ -198,6 +207,12 @@ PYTHONPATH=src python -m assurancectl.cli governance-drift \
 The identity and node-init paths are explicitly development-only. They emit
 deterministic placeholder identity material so the local bootstrap flow can
 advance without pretending to solve production validator custody.
+
+The collection and assembly path is deterministic by design. Operators collect
+each validator bundle into a normalized manifest, merge the full set into a
+single genesis plan, and then render an assembled localnet bundle from that
+same collection. Assembly fails closed on duplicate validator IDs, partial
+collections, topology mismatches, and unexpected voting power.
 
 The governance inference path is explicitly advisory. It helps classify and
 score proposals, but it does not vote, sign, or bypass human review. The new
