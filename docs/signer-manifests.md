@@ -384,6 +384,40 @@ Index generation fails closed when retained packages overlap on the same
 current policy version, reuse the same latest receipt id, or disagree on chain
 or policy path metadata.
 
+## Archive promotion receipts
+
+`0aid signer-rotation-ledger-promote` turns a verified export package plus a
+consistent archive index into retained-baseline proof artifacts.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-promote \
+  --export ./build/rotation/governance-chair-audit-export.json \
+  --verify ./build/rotation/governance-chair-audit-export-verify.json \
+  --index ./build/rotation/activation-audit-archive-index.json \
+  --promoted-at 2026-04-24T00:20:00Z \
+  --promoted-by governance-archive-bot \
+  --out ./build/rotation/governance-chair-archive-promotion.json \
+  --receipt-out ./build/rotation/governance-chair-archive-promotion-receipt.json \
+  --attestation-out ./build/rotation/governance-chair-retained-baseline-attestation.json
+```
+
+Promotion emits:
+
+- a deterministic archive promotion receipt bound to the package path
+- a retained-baseline attestation tied to the matching archive index entry
+- digests for the export package, verification report, archive index, and
+  retained entry lineage
+
+Promotion fails closed when:
+
+- the verification report does not match a recomputed export verification
+- the export package is not `archive_ready`
+- the archive index is not `consistent`
+- the requested package path does not exist in the archive index
+- the archive index entry drifts on policy version, digest, receipt lineage, or entry count
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -408,3 +442,5 @@ or policy path metadata.
     package before archiving the rotation baseline.
 14. Verify that archived export package before accepting it as a retained baseline.
 15. Rebuild the archive index manifest whenever a new retained baseline is added.
+16. Promote the retained baseline only after the verified export and archive
+    index entry produce a matching promotion receipt and attestation pair.

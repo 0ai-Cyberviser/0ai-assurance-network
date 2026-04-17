@@ -6,3 +6,4 @@ build/*.json
 /0aid
 __pycache__/
 *.pyc
+*.egg-info/
