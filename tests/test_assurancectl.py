@@ -42,6 +42,7 @@ class AssuranceCtlTests(unittest.TestCase):
         rationale: str,
         signature_id: str,
         signer_id: str | None = None,
+        actor_id: str | None = None,
     ) -> dict[str, object]:
         signer_policy = self.load_checkpoint_signer_policy()
         signers = signer_policy["signers"]
@@ -57,6 +58,7 @@ class AssuranceCtlTests(unittest.TestCase):
             "signed_at": "2026-04-16T10:00:00Z",
             "expires_at": "2026-04-17T10:00:00Z",
         }
+        resolved_actor_id = actor_id or str(signer_entry["actor_id"])
         message = json.dumps(
             {
                 "checkpoint_id": checkpoint_id,
@@ -64,6 +66,7 @@ class AssuranceCtlTests(unittest.TestCase):
                 "new_status": new_status,
                 "updated_at": updated_at,
                 "recorded_by": recorded_by,
+                "actor_id": resolved_actor_id,
                 "rationale": rationale,
                 "signature": signature_meta,
             },
@@ -81,6 +84,7 @@ class AssuranceCtlTests(unittest.TestCase):
             "new_status": new_status,
             "updated_at": updated_at,
             "recorded_by": recorded_by,
+            "actor_id": resolved_actor_id,
             "rationale": rationale,
             "signature": {
                 **signature_meta,
@@ -167,6 +171,7 @@ class AssuranceCtlTests(unittest.TestCase):
                 ("config/network-topology.json", "config/network-topology.json"),
                 ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
                 ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
                 ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
                 ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
                 ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
@@ -196,6 +201,7 @@ class AssuranceCtlTests(unittest.TestCase):
                 ("config/network-topology.json", "config/network-topology.json"),
                 ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
                 ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
                 ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
                 ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
                 ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
@@ -233,6 +239,7 @@ class AssuranceCtlTests(unittest.TestCase):
                 ("config/network-topology.json", "config/network-topology.json"),
                 ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
                 ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
                 ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
                 ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
                 ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
@@ -258,6 +265,44 @@ class AssuranceCtlTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("duplicate identity role binding", result.stderr)
+
+    def test_validate_fails_when_checkpoint_signer_actor_binding_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for source, target in (
+                ("config/network-topology.json", "config/network-topology.json"),
+                ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
+                ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
+            ):
+                target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            identity_path = root / "config" / "identity" / "bootstrap.json"
+            identity_payload = json.loads(identity_path.read_text(encoding="utf-8"))
+            identity_payload["role_bindings"] = [
+                binding
+                for binding in identity_payload["role_bindings"]
+                if binding["role"] != "treasury-program-manager"
+            ]
+            identity_path.write_text(json.dumps(identity_payload), encoding="utf-8")
+
+            env = {"PYTHONPATH": PYTHONPATH}
+            result = subprocess.run(
+                [sys.executable, "-m", "assurancectl.cli", "--root", str(root), "validate"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("identity bootstrap missing active bindings for roles: treasury-program-manager", result.stderr)
 
     def test_governance_sim_treasury_grant(self) -> None:
         result = self.run_cli(
@@ -633,6 +678,19 @@ class AssuranceCtlTests(unittest.TestCase):
                             )
                         )
                     ),
+                    "actor_id": (
+                        "op-treasury-program-manager-1"
+                        if checkpoint["phase"] == "immediate_action"
+                        else (
+                            "op-treasury-review-chair-1"
+                            if checkpoint["phase"] == "approval_guardrail"
+                            else (
+                                "op-finance-telemetry-lead-1"
+                                if checkpoint["phase"] == "monitoring" and index == len(treasury["checkpoints"]) - 1
+                                else None
+                            )
+                        )
+                    ),
                     "status": (
                         "completed"
                         if checkpoint["phase"] in {"immediate_action", "approval_guardrail"}
@@ -667,6 +725,20 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertEqual(treasury_updated["checkpoint_status_counts"]["pending"], 1)
         self.assertEqual(treasury_updated["invalid_transition_count"], 0)
         self.assertEqual(treasury_updated["invalid_audit_count"], 0)
+        immediate_action = next(
+            checkpoint
+            for checkpoint in treasury_updated["checkpoints"]
+            if checkpoint["phase"] == "immediate_action"
+        )
+        self.assertTrue(immediate_action["eligible_actors"])
+        self.assertEqual(immediate_action["eligible_actors"][0]["actor_id"], "op-treasury-program-manager-1")
+        monitoring_checkpoint = next(
+            checkpoint
+            for checkpoint in treasury_updated["checkpoints"]
+            if checkpoint["checkpoint_id"] == "treasury-grant-0ai-core-monitoring-1"
+        )
+        self.assertEqual(monitoring_checkpoint["actor_id"], "op-finance-telemetry-lead-1")
+        self.assertEqual(monitoring_checkpoint["assigned_actor"]["display_name"], "Finance Telemetry Lead 1")
         self.assertTrue(
             all(
                 checkpoint["ready_to_start"]
@@ -706,6 +778,8 @@ class AssuranceCtlTests(unittest.TestCase):
         )
         self.assertEqual(monitoring["status"], "in_progress")
         self.assertEqual(monitoring["recorded_by"], "finance-telemetry-lead")
+        self.assertEqual(monitoring["actor_id"], "op-finance-telemetry-lead-1")
+        self.assertEqual(monitoring["actor"]["display_name"], "Finance Telemetry Lead 1")
 
     def test_governance_replay_rejects_duplicate_events(self) -> None:
         duplicate_payload = {
@@ -827,6 +901,33 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertEqual(payload["source_kind"], "event_log")
         self.assertEqual(payload["invalid_event_count"], 1)
         self.assertIn("is not authorized for role treasury-program-manager", payload["event_alerts"][0])
+
+    def test_governance_replay_rejects_signer_actor_mismatch(self) -> None:
+        mismatched_actor_payload = {
+            "version": "checkpoint-event-log-actor-mismatch-test",
+            "events": [
+                self.build_signed_event(
+                    checkpoint_id="treasury-grant-0ai-core-immediate_action-1",
+                    previous_status="pending",
+                    new_status="in_progress",
+                    updated_at="2026-04-16T11:01:00Z",
+                    recorded_by="treasury-program-manager",
+                    actor_id="op-treasury-review-chair-1",
+                    rationale="Actor mismatch should be rejected.",
+                    signature_id="actor-mismatch-1",
+                )
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events-actor-mismatch.json"
+            event_path.write_text(json.dumps(mismatched_actor_payload), encoding="utf-8")
+            result = self.run_cli("governance-replay", "--status", str(event_path), "--json")
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["invalid_event_count"], 1)
+        self.assertIn("does not match event actor_id", payload["event_alerts"][0])
 
     def test_governance_replay_rejects_signature_replay_attempt(self) -> None:
         replayed_signature_payload = {
@@ -978,6 +1079,7 @@ class AssuranceCtlTests(unittest.TestCase):
                     "previous_status": "pending",
                     "updated_at": "2026-04-16T12:00:00Z",
                     "recorded_by": "treasury-program-manager",
+                    "actor_id": "op-treasury-program-manager-1",
                     "status": "completed",
                 }
             ],
@@ -1034,6 +1136,7 @@ class AssuranceCtlTests(unittest.TestCase):
                         "previous_status": "in_progress",
                         "updated_at": f"2026-04-16T12:{index:02d}:00Z",
                         "recorded_by": "treasury-program-manager",
+                        "actor_id": "op-treasury-program-manager-1",
                         "status": "completed",
                     }
                 )
@@ -1045,6 +1148,7 @@ class AssuranceCtlTests(unittest.TestCase):
                         "previous_status": "in_progress",
                         "updated_at": "2026-04-16T12:01:00Z",
                         "recorded_by": "treasury-review-chair",
+                        "actor_id": "op-treasury-review-chair-1",
                         "status": "completed",
                     }
                 )

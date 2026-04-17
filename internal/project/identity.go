@@ -25,35 +25,79 @@ type IdentityFoundationPlanOutput struct {
 	RolePlan         []IdentityRolePlan    `json:"role_plan"`
 }
 
-func requiredIdentityRoles(modulePlan ModulePlanConfig) (map[string][]string, []string) {
-	roleUsage := make(map[string][]string)
-	appendUsage := func(role string, source string) {
-		for _, existing := range roleUsage[role] {
-			if existing == source {
-				return
-			}
-		}
-		roleUsage[role] = append(roleUsage[role], source)
-		sort.Strings(roleUsage[role])
+func stringMap(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
 	}
+	return map[string]any{}
+}
+
+func stringSlice(value any) []string {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	items := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		text := fmt.Sprint(entry)
+		if text != "" {
+			items = append(items, text)
+		}
+	}
+	return items
+}
+
+func appendIdentityRoleUsage(roleUsage map[string][]string, role string, source string) {
+	if role == "" {
+		return
+	}
+	for _, existing := range roleUsage[role] {
+		if existing == source {
+			return
+		}
+	}
+	roleUsage[role] = append(roleUsage[role], source)
+	sort.Strings(roleUsage[role])
+}
+
+func requiredIdentityRoles(bundle Bundle) (map[string][]string, []string) {
+	roleUsage := make(map[string][]string)
 
 	recordBoundary := func(prefix string, boundary ModuleBoundary) {
 		source := prefix + ":" + boundary.Name
 		for _, tx := range boundary.Transactions {
 			for _, role := range tx.ActorRoles {
-				appendUsage(role, source)
+				appendIdentityRoleUsage(roleUsage, role, source)
 			}
 		}
 		for _, permission := range boundary.OperatorPermissions {
-			appendUsage(permission.Role, source)
+			appendIdentityRoleUsage(roleUsage, permission.Role, source)
 		}
 	}
 
-	for _, boundary := range modulePlan.MVPModules {
+	for _, boundary := range bundle.Modules.MVPModules {
 		recordBoundary("mvp", boundary)
 	}
-	for _, boundary := range modulePlan.DependencySurfaces {
+	for _, boundary := range bundle.Modules.DependencySurfaces {
 		recordBoundary("dependency", boundary)
+	}
+	executionDefaults := stringMap(stringMap(stringMap(bundle.InferencePolicy["remediation"])["execution_defaults"]))
+	for phase, role := range stringMap(executionDefaults["phase_owners"]) {
+		appendIdentityRoleUsage(roleUsage, fmt.Sprint(role), "governance:phase_owner:"+phase)
+	}
+	for proposalKind, override := range stringMap(executionDefaults["owner_overrides"]) {
+		for phase, role := range stringMap(override) {
+			appendIdentityRoleUsage(roleUsage, fmt.Sprint(role), "governance:owner_override:"+proposalKind+":"+phase)
+		}
+	}
+	if rawSigners, ok := bundle.CheckpointSigners["signers"].([]any); ok {
+		for _, rawSigner := range rawSigners {
+			signer := stringMap(rawSigner)
+			signerID := fmt.Sprint(signer["signer_id"])
+			for _, role := range stringSlice(signer["roles"]) {
+				appendIdentityRoleUsage(roleUsage, role, "governance:signer:"+signerID)
+			}
+		}
 	}
 
 	roles := make([]string, 0, len(roleUsage))
@@ -133,8 +177,9 @@ func ValidateIdentityBootstrap(bundle Bundle) error {
 		}
 	}
 
-	roleUsage, requiredRoles := requiredIdentityRoles(bundle.Modules)
+	roleUsage, requiredRoles := requiredIdentityRoles(bundle)
 	boundRoles := make(map[string]struct{})
+	activeActorRoleBindings := make(map[string]struct{})
 	seenBindings := make(map[string]struct{}, len(bundle.Identity.RoleBindings))
 	for _, binding := range bundle.Identity.RoleBindings {
 		if binding.ActorID == "" || binding.Role == "" || binding.Scope == "" || binding.GrantedBy == "" {
@@ -161,11 +206,38 @@ func ValidateIdentityBootstrap(bundle Bundle) error {
 		seenBindings[bindingKey] = struct{}{}
 		if binding.Status == "active" {
 			boundRoles[binding.Role] = struct{}{}
+			activeActorRoleBindings[binding.ActorID+"|"+binding.Role] = struct{}{}
 		}
 	}
 	for _, role := range requiredRoles {
 		if _, exists := boundRoles[role]; !exists {
 			return fmt.Errorf("identity bootstrap missing active binding for required role %s", role)
+		}
+	}
+	if rawSigners, ok := bundle.CheckpointSigners["signers"].([]any); ok {
+		for _, rawSigner := range rawSigners {
+			signer := stringMap(rawSigner)
+			signerID := fmt.Sprint(signer["signer_id"])
+			actorID := fmt.Sprint(signer["actor_id"])
+			if actorID == "" {
+				return fmt.Errorf("checkpoint signer %s must declare actor_id", signerID)
+			}
+			actor, exists := actors[actorID]
+			if !exists {
+				return fmt.Errorf("checkpoint signer %s references unknown actor %s", signerID, actorID)
+			}
+			if actor.Status != "active" {
+				return fmt.Errorf("checkpoint signer %s references inactive actor %s", signerID, actorID)
+			}
+			for _, role := range stringSlice(signer["roles"]) {
+				if _, exists := activeActorRoleBindings[actorID+"|"+role]; !exists {
+					return fmt.Errorf(
+						"checkpoint signer %s role %s is not backed by an active identity binding",
+						signerID,
+						role,
+					)
+				}
+			}
 		}
 	}
 	return nil
@@ -176,7 +248,7 @@ func IdentityFoundationPlan(bundle Bundle) (IdentityFoundationPlanOutput, error)
 		return IdentityFoundationPlanOutput{}, err
 	}
 
-	roleUsage, requiredRoles := requiredIdentityRoles(bundle.Modules)
+	roleUsage, requiredRoles := requiredIdentityRoles(bundle)
 	activeActors := 0
 	for _, actor := range bundle.Identity.Actors {
 		if actor.Status == "active" {

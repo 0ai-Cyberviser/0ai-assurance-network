@@ -6,6 +6,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:01:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -13,6 +14,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:02:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -20,6 +22,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:03:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -27,6 +30,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:04:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -34,6 +38,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:05:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -41,6 +46,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:06:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -48,6 +54,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:07:00Z",
       "recorded_by": "treasury-program-manager",
+      "actor_id": "op-treasury-program-manager-1",
       "status": "completed"
     },
     {
@@ -55,6 +62,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:08:00Z",
       "recorded_by": "treasury-review-chair",
+      "actor_id": "op-treasury-review-chair-1",
       "status": "completed"
     },
     {
@@ -62,6 +70,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:09:00Z",
       "recorded_by": "treasury-review-chair",
+      "actor_id": "op-treasury-review-chair-1",
       "status": "completed"
     },
     {
@@ -69,6 +78,7 @@
       "previous_status": "in_progress",
       "updated_at": "2026-04-16T12:10:00Z",
       "recorded_by": "treasury-review-chair",
+      "actor_id": "op-treasury-review-chair-1",
       "status": "completed"
     },
     {
@@ -76,6 +86,7 @@
       "previous_status": "pending",
       "updated_at": "2026-04-16T13:00:00Z",
       "recorded_by": "finance-telemetry-lead",
+      "actor_id": "op-finance-telemetry-lead-1",
       "status": "in_progress"
     }
   ]

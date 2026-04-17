@@ -5,60 +5,98 @@
   "maximum_signature_validity_seconds": 86400,
   "signers": [
     {
+      "actor_id": "op-governance-chair-1",
+      "signer_id": "governance-chair-bot",
+      "key_id": "governance-chair-dev-v1",
+      "roles": ["governance-chair"],
+      "shared_secret": "dev-secret-governance-chair-v1"
+    },
+    {
+      "actor_id": "op-governance-ops-1",
+      "signer_id": "governance-ops-bot",
+      "key_id": "governance-ops-dev-v1",
+      "roles": ["governance-ops"],
+      "shared_secret": "dev-secret-governance-ops-v1"
+    },
+    {
+      "actor_id": "op-token-house-secretariat-1",
+      "signer_id": "token-house-secretariat-bot",
+      "key_id": "token-house-secretariat-dev-v1",
+      "roles": ["token-house-secretariat"],
+      "shared_secret": "dev-secret-token-house-secretariat-v1"
+    },
+    {
+      "actor_id": "op-telemetry-ops-1",
+      "signer_id": "telemetry-ops-bot",
+      "key_id": "telemetry-ops-dev-v1",
+      "roles": ["telemetry-ops"],
+      "shared_secret": "dev-secret-telemetry-ops-v1"
+    },
+    {
+      "actor_id": "op-treasury-program-manager-1",
       "signer_id": "treasury-program-manager-bot",
       "key_id": "treasury-program-manager-dev-v1",
       "roles": ["treasury-program-manager"],
       "shared_secret": "dev-secret-treasury-program-manager-v1"
     },
     {
+      "actor_id": "op-treasury-review-chair-1",
       "signer_id": "treasury-review-chair-bot",
       "key_id": "treasury-review-chair-dev-v1",
       "roles": ["treasury-review-chair"],
       "shared_secret": "dev-secret-treasury-review-chair-v1"
     },
     {
+      "actor_id": "op-finance-telemetry-lead-1",
       "signer_id": "finance-telemetry-lead-bot",
       "key_id": "finance-telemetry-lead-dev-v1",
       "roles": ["finance-telemetry-lead"],
       "shared_secret": "dev-secret-finance-telemetry-lead-v1"
     },
     {
+      "actor_id": "op-validator-ops-1",
       "signer_id": "validator-ops-lead-bot",
       "key_id": "validator-ops-lead-dev-v1",
       "roles": ["validator-ops-lead"],
       "shared_secret": "dev-secret-validator-ops-lead-v1"
     },
     {
+      "actor_id": "op-staking-governance-reviewer-1",
       "signer_id": "staking-governance-reviewer-bot",
       "key_id": "staking-governance-reviewer-dev-v1",
       "roles": ["staking-governance-reviewer"],
       "shared_secret": "dev-secret-staking-governance-reviewer-v1"
     },
     {
+      "actor_id": "op-network-reliability-lead-1",
       "signer_id": "network-reliability-lead-bot",
       "key_id": "network-reliability-lead-dev-v1",
       "roles": ["network-reliability-lead"],
       "shared_secret": "dev-secret-network-reliability-lead-v1"
     },
     {
+      "actor_id": "op-safety-council-chair-1",
       "signer_id": "safety-council-chair-bot",
       "key_id": "safety-council-chair-dev-v1",
       "roles": ["safety-council-chair"],
       "shared_secret": "dev-secret-safety-council-chair-v1"
     },
     {
+      "actor_id": "op-incident-commander-1",
       "signer_id": "incident-commander-bot",
       "key_id": "incident-commander-dev-v1",
       "roles": ["incident-commander"],
       "shared_secret": "dev-secret-incident-commander-v1"
     },
     {
+      "actor_id": "op-safety-council-secretariat-1",
       "signer_id": "safety-council-secretariat-bot",
       "key_id": "safety-council-secretariat-dev-v1",
       "roles": ["safety-council-secretariat"],
       "shared_secret": "dev-secret-safety-council-secretariat-v1"
     },
     {
+      "actor_id": "op-security-telemetry-lead-1",
       "signer_id": "security-telemetry-lead-bot",
       "key_id": "security-telemetry-lead-dev-v1",
       "roles": ["security-telemetry-lead"],

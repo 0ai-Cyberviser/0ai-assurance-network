@@ -21,6 +21,7 @@ from .inference import (
     load_proposal,
     load_registry,
     replay_checkpoint_state,
+    resolve_identity_actor_ref,
 )
 
 
@@ -210,7 +211,21 @@ def _governance_trends_payload(trends) -> list[dict[str, object]]:
     ]
 
 
-def _governance_replay_payload(replay) -> dict[str, object]:
+def _actor_ref_payload(actor) -> dict[str, object] | None:
+    if actor is None:
+        return None
+    return {
+        "actor_id": actor.actor_id,
+        "display_name": actor.display_name,
+        "actor_type": actor.actor_type,
+        "organization_id": actor.organization_id,
+        "organization_display_name": actor.organization_display_name,
+        "role": actor.role,
+        "scopes": actor.scopes,
+    }
+
+
+def _governance_replay_payload(replay, identity_bootstrap) -> dict[str, object]:
     return {
         "source_kind": replay.source_kind,
         "replay_event_count": replay.replay_event_count,
@@ -222,6 +237,14 @@ def _governance_replay_payload(replay) -> dict[str, object]:
                 "previous_status": checkpoint_state.get("previous_status"),
                 "updated_at": checkpoint_state.get("updated_at"),
                 "recorded_by": checkpoint_state.get("recorded_by"),
+                "actor_id": checkpoint_state.get("actor_id"),
+                "actor": _actor_ref_payload(
+                    resolve_identity_actor_ref(
+                        identity_bootstrap,
+                        checkpoint_state.get("actor_id"),
+                        checkpoint_state.get("recorded_by"),
+                    )
+                ),
                 "status": checkpoint_state.get("status"),
             }
             for checkpoint_id, checkpoint_state in sorted(replay.checkpoints.items())
@@ -260,11 +283,14 @@ def _governance_remediation_payload(plans) -> list[dict[str, object]]:
                     "phase": checkpoint.phase,
                     "phase_order": checkpoint.phase_order,
                     "owner_role": checkpoint.owner_role,
+                    "eligible_actors": [_actor_ref_payload(actor) for actor in checkpoint.eligible_actors],
                     "title": checkpoint.title,
                     "blocking": checkpoint.blocking,
                     "previous_status": checkpoint.previous_status,
                     "updated_at": checkpoint.updated_at,
                     "recorded_by": checkpoint.recorded_by,
+                    "actor_id": checkpoint.actor_id,
+                    "assigned_actor": _actor_ref_payload(checkpoint.assigned_actor),
                     "status": checkpoint.status,
                     "transition_valid": checkpoint.transition_valid,
                     "transition_note": checkpoint.transition_note,
@@ -413,8 +439,8 @@ def _print_governance_trends(trends, emit_json: bool) -> None:
         print(f"   summary: {trend.summary}")
 
 
-def _print_governance_replay(replay, emit_json: bool) -> None:
-    payload = _governance_replay_payload(replay)
+def _print_governance_replay(replay, identity_bootstrap, emit_json: bool) -> None:
+    payload = _governance_replay_payload(replay, identity_bootstrap)
     if emit_json:
         print(json.dumps(payload, indent=2))
         return
@@ -627,6 +653,7 @@ def main(argv: list[str] | None = None) -> int:
             policy=policy,
             checkpoint_statuses=checkpoint_statuses,
             signature_policy=signer_policy,
+            identity_bootstrap=config.identity_bootstrap,
         )
         sources = {"registry": args.registry, "history": args.history}
         if args.status:
@@ -648,15 +675,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "governance-replay":
         checkpoint_statuses = load_checkpoint_statuses(args.status)
         signer_policy = load_checkpoint_signer_policy(config)
-        replay = replay_checkpoint_state(checkpoint_statuses, signature_policy=signer_policy)
+        replay = replay_checkpoint_state(
+            checkpoint_statuses,
+            signature_policy=signer_policy,
+            identity_bootstrap=config.identity_bootstrap,
+        )
         _maybe_write_artifact(
             path=args.artifact_out,
             artifact_type="governance_replay",
             command=args.command,
-            payload=_governance_replay_payload(replay),
+            payload=_governance_replay_payload(replay, config.identity_bootstrap),
             sources={"status": args.status},
         )
-        _print_governance_replay(replay, emit_json=args.json)
+        _print_governance_replay(replay, config.identity_bootstrap, emit_json=args.json)
         return 0 if replay.invalid_event_count == 0 else 2
 
     if args.command == "governance-drift":

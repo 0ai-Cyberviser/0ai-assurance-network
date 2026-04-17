@@ -20,6 +20,7 @@ class LoadedConfig:
     topology: dict[str, Any]
     genesis: dict[str, Any]
     policy: dict[str, Any]
+    inference_policy: dict[str, Any]
     checkpoint_signers: dict[str, Any]
     module_plan: dict[str, Any]
     identity_bootstrap: dict[str, Any]
@@ -44,6 +45,7 @@ def load_config(explicit_root: str | Path | None = None) -> LoadedConfig:
         topology=_load_json(config / "network-topology.json"),
         genesis=_load_json(config / "genesis" / "base-genesis.json"),
         policy=_load_json(config / "policy" / "release-guards.json"),
+        inference_policy=_load_json(config / "governance" / "inference-policy.json"),
         checkpoint_signers=_load_json(config / "governance" / "checkpoint-signers.json"),
         module_plan=_load_json(config / "modules" / "milestone-1.json"),
         identity_bootstrap=_load_json(config / "identity" / "bootstrap.json"),
@@ -146,10 +148,12 @@ def validate_checkpoint_signers(checkpoint_signers: dict[str, Any]) -> None:
     key_ids: set[str] = set()
     role_bindings: set[str] = set()
     for signer in signers:
+        actor_id = str(signer.get("actor_id", ""))
         signer_id = str(signer["signer_id"])
         key_id = str(signer["key_id"])
         shared_secret = str(signer["shared_secret"])
         roles = [str(role) for role in signer["roles"]]
+        _assert(actor_id != "", f"checkpoint signer {signer_id} must declare an actor_id")
         _assert(signer_id not in signer_ids, f"duplicate checkpoint signer_id: {signer_id}")
         _assert(key_id not in key_ids, f"duplicate checkpoint key_id: {key_id}")
         _assert(shared_secret != "", f"checkpoint signer {signer_id} must declare a shared_secret")
@@ -223,7 +227,41 @@ def _required_identity_roles(module_plan: dict[str, Any]) -> set[str]:
     return required
 
 
-def validate_identity_bootstrap(identity_bootstrap: dict[str, Any], module_plan: dict[str, Any], topology: dict[str, Any]) -> None:
+def _required_governance_identity_roles(
+    inference_policy: dict[str, Any],
+    checkpoint_signers: dict[str, Any],
+) -> set[str]:
+    required: set[str] = set()
+    execution_defaults = (
+        inference_policy.get("remediation", {})
+        .get("execution_defaults", {})
+    )
+    required.update(str(role) for role in execution_defaults.get("phase_owners", {}).values())
+    for override in execution_defaults.get("owner_overrides", {}).values():
+        required.update(str(role) for role in override.values())
+    for signer in checkpoint_signers.get("signers", []):
+        required.update(str(role) for role in signer.get("roles", []))
+    return {role for role in required if role}
+
+
+def _allowed_identity_roles(
+    module_plan: dict[str, Any],
+    inference_policy: dict[str, Any],
+    checkpoint_signers: dict[str, Any],
+) -> set[str]:
+    return (
+        _required_identity_roles(module_plan)
+        | _required_governance_identity_roles(inference_policy, checkpoint_signers)
+    )
+
+
+def validate_identity_bootstrap(
+    identity_bootstrap: dict[str, Any],
+    module_plan: dict[str, Any],
+    topology: dict[str, Any],
+    inference_policy: dict[str, Any],
+    checkpoint_signers: dict[str, Any],
+) -> None:
     _assert(identity_bootstrap["version"] != "", "identity bootstrap version must be set")
     _assert(identity_bootstrap["chain_id"] == topology["chain_id"], "identity bootstrap chain id must match topology")
 
@@ -254,9 +292,10 @@ def validate_identity_bootstrap(identity_bootstrap: dict[str, Any], module_plan:
             f"identity actor {actor['actor_id']} organization must be organization or council",
         )
 
-    required_roles = _required_identity_roles(module_plan)
+    required_roles = _allowed_identity_roles(module_plan, inference_policy, checkpoint_signers)
     seen_bindings: set[str] = set()
     active_roles: set[str] = set()
+    active_actor_role_bindings: set[str] = set()
     for binding in role_bindings:
         actor_id = str(binding["actor_id"])
         role = str(binding["role"])
@@ -273,9 +312,22 @@ def validate_identity_bootstrap(identity_bootstrap: dict[str, Any], module_plan:
         seen_bindings.add(binding_key)
         if status == "active":
             active_roles.add(role)
+            active_actor_role_bindings.add(f"{actor_id}|{role}")
 
     missing_roles = sorted(required_roles - active_roles)
     _assert(not missing_roles, f"identity bootstrap missing active bindings for roles: {', '.join(missing_roles)}")
+    for signer in checkpoint_signers["signers"]:
+        actor_id = str(signer["actor_id"])
+        signer_id = str(signer["signer_id"])
+        _assert(actor_id in actors_by_id, f"checkpoint signer {signer_id} references unknown actor {actor_id}")
+        actor = actors_by_id[actor_id]
+        _assert(actor["status"] == "active", f"checkpoint signer {signer_id} references inactive actor {actor_id}")
+        for role in signer["roles"]:
+            binding_key = f"{actor_id}|{role}"
+            _assert(
+                binding_key in active_actor_role_bindings,
+                f"checkpoint signer {signer_id} role {role} is not backed by an active identity binding",
+            )
 
 
 def validate_all(config: LoadedConfig) -> None:
@@ -284,4 +336,10 @@ def validate_all(config: LoadedConfig) -> None:
     validate_policy(config.policy)
     validate_checkpoint_signers(config.checkpoint_signers)
     validate_module_plan(config.module_plan)
-    validate_identity_bootstrap(config.identity_bootstrap, config.module_plan, config.topology)
+    validate_identity_bootstrap(
+        config.identity_bootstrap,
+        config.module_plan,
+        config.topology,
+        config.inference_policy,
+        config.checkpoint_signers,
+    )

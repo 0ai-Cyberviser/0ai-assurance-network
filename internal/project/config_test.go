@@ -29,7 +29,13 @@ func TestLoadBundle(t *testing.T) {
 	if bundle.Identity.Version != "1.0.0" {
 		t.Fatalf("unexpected identity bootstrap version: %s", bundle.Identity.Version)
 	}
-	if len(bundle.Identity.RoleBindings) != 8 {
-		t.Fatalf("expected 8 identity role bindings, got %d", len(bundle.Identity.RoleBindings))
+	if len(bundle.Identity.RoleBindings) != 22 {
+		t.Fatalf("expected 22 identity role bindings, got %d", len(bundle.Identity.RoleBindings))
+	}
+	if len(bundle.CheckpointSigners) == 0 {
+		t.Fatal("expected checkpoint signer policy to be loaded")
+	}
+	if len(bundle.InferencePolicy) == 0 {
+		t.Fatal("expected inference policy to be loaded")
 	}
 }
