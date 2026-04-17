@@ -341,6 +341,49 @@ Operators may also pass `--reconcile` to reuse a saved reconciliation report.
 Export still fails closed when that report contradicts the supplied ledger or
 current policy digest.
 
+## Export verification
+
+`0aid signer-rotation-ledger-verify-export` validates one exported audit
+package for archive retention.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-verify-export \
+  --export ./build/rotation/governance-chair-audit-export.json \
+  --out ./build/rotation/governance-chair-audit-export-verify.json
+```
+
+Verification reruns reconciliation from the embedded ledger and policy,
+rebuilds the expected export package, and compares the regenerated payload with
+the archived artifact. The verification report marks a bundle as
+`archive_ready` only when the recomputed export matches exactly and the
+embedded reconciliation status is still `consistent`.
+
+## Archive index manifests
+
+`0aid signer-rotation-ledger-archive-index` builds a compact archive manifest
+over a retained set of export packages.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-archive-index \
+  --exports ./build/rotation/current-audit-export.json,./build/rotation/governance-chair-audit-export.json \
+  --out ./build/rotation/activation-audit-archive-index.json
+```
+
+The archive index includes:
+
+- package path, policy version, digest, and latest receipt lineage for each retained export
+- per-package archive readiness and verification issues
+- aggregate chain and policy path continuity
+- latest retained baseline summary
+
+Index generation fails closed when retained packages overlap on the same
+current policy version, reuse the same latest receipt id, or disagree on chain
+or policy path metadata.
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -363,3 +406,5 @@ current policy digest.
     treating the rotation lineage as continuous and complete.
 13. Export the policy, ledger, and reconciliation state into a stable audit
     package before archiving the rotation baseline.
+14. Verify that archived export package before accepting it as a retained baseline.
+15. Rebuild the archive index manifest whenever a new retained baseline is added.

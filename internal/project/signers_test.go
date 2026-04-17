@@ -950,3 +950,156 @@ func TestSignerRotationActivationAuditExportFailsOnLatestReceiptMismatch(t *test
 		t.Fatalf("expected latest receipt mismatch error, got %v", err)
 	}
 }
+
+func mustCurrentSignerRotationActivationAuditExportPackage(
+	t *testing.T,
+	bundle Bundle,
+) SignerRotationActivationAuditExportPackage {
+	t.Helper()
+
+	currentPolicy, err := currentSignerPolicy(bundle)
+	if err != nil {
+		t.Fatalf("currentSignerPolicy failed: %v", err)
+	}
+	ledger := SignerRotationActivationAuditLedger{
+		Version:    "1.0.0",
+		Status:     "active",
+		ChainID:    "0ai-assurance-1",
+		PolicyPath: "config/governance/checkpoint-signers.json",
+		Entries:    []SignerRotationActivationAuditEntry{},
+		EntryCount: 0,
+	}
+	report := mustSignerRotationActivationAuditReconcileReport(t, ledger, currentPolicy)
+	exportPackage, err := SignerRotationActivationAuditExport(SignerRotationActivationAuditExportRequest{
+		Ledger:         ledger,
+		Policy:         currentPolicy,
+		Reconciliation: report,
+		PolicyPath:     "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditExport failed: %v", err)
+	}
+	return exportPackage
+}
+
+func mustRotatedSignerRotationActivationAuditExportPackage(
+	t *testing.T,
+	bundle Bundle,
+) SignerRotationActivationAuditExportPackage {
+	t.Helper()
+
+	applied := mustSignerRotationApplyResult(t, bundle)
+	ledger := mustSignerRotationActivationAuditLedger(t, bundle)
+	report := mustSignerRotationActivationAuditReconcileReport(t, ledger, applied.AppliedPolicy)
+	exportPackage, err := SignerRotationActivationAuditExport(SignerRotationActivationAuditExportRequest{
+		Ledger:         ledger,
+		Policy:         applied.AppliedPolicy,
+		Reconciliation: report,
+		PolicyPath:     "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditExport failed: %v", err)
+	}
+	return exportPackage
+}
+
+func TestSignerRotationActivationAuditVerifyExport(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	exportPackage := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	report, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: exportPackage,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	if report.Status != "consistent" {
+		t.Fatalf("unexpected verification status: %s", report.Status)
+	}
+	if !report.ArchiveReady {
+		t.Fatal("expected export package to be archive ready")
+	}
+	if len(report.VerificationIssues) != 0 {
+		t.Fatalf("expected no verification issues, got %+v", report.VerificationIssues)
+	}
+}
+
+func TestSignerRotationActivationAuditVerifyExportFlagsTamper(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	exportPackage := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	exportPackage.BaselineSnapshot.CurrentPolicyDigest = "deadbeef"
+	report, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: exportPackage,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	if report.Status != "invalid" {
+		t.Fatalf("expected invalid verification status, got %s", report.Status)
+	}
+	if report.ArchiveReady {
+		t.Fatal("expected tampered export package to be non-archive-ready")
+	}
+	if len(report.VerificationIssues) == 0 || !strings.Contains(report.VerificationIssues[0], "activation audit export package drift detected") {
+		t.Fatalf("expected export drift issue, got %+v", report.VerificationIssues)
+	}
+}
+
+func TestSignerRotationActivationAuditArchiveIndex(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	if index.Status != "consistent" {
+		t.Fatalf("unexpected archive index status: %s", index.Status)
+	}
+	if index.PackageCount != 2 || index.ArchiveReadyCount != 2 {
+		t.Fatalf("unexpected archive counts: %+v", index)
+	}
+	if index.LatestCurrentPolicyVersion != rotatedExport.CurrentPolicy.Version {
+		t.Fatalf("unexpected latest archive policy version: %s", index.LatestCurrentPolicyVersion)
+	}
+}
+
+func TestSignerRotationActivationAuditArchiveIndexFlagsDuplicateBaseline(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/export-a.json", ExportPackage: rotatedExport},
+			{PackagePath: "build/rotation/export-b.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	if index.Status != "invalid" {
+		t.Fatalf("expected invalid archive index status, got %s", index.Status)
+	}
+	if len(index.Issues) == 0 || !strings.Contains(index.Issues[0], "duplicate archive current_policy_version") {
+		t.Fatalf("expected duplicate baseline issue, got %+v", index.Issues)
+	}
+}

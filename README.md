@@ -85,6 +85,8 @@ make -C projects/0ai-assurance-network signer-rotation-verify PLAN=build/rotatio
 make -C projects/0ai-assurance-network signer-rotation-ledger-append APPLY=build/rotation/governance-chair-apply-result.json VERIFICATION=build/rotation/governance-chair-verification.json LEDGER_OUT=build/rotation/activation-audit-ledger.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-reconcile LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-export LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json OUT=build/rotation/governance-chair-audit-export.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-verify-export EXPORT=build/rotation/governance-chair-audit-export.json OUT=build/rotation/governance-chair-audit-export-verify.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-archive-index EXPORTS=build/rotation/current-audit-export.json,build/rotation/governance-chair-audit-export.json OUT=build/rotation/activation-audit-archive-index.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -250,6 +252,17 @@ Exports fail closed when the reconciliation report contradicts the ledger or
 current policy digests, so operators cannot archive a self-inconsistent bundle
 as if it were a valid baseline.
 
+`signer-rotation-ledger-verify-export` replays that package deterministically
+and emits a machine-readable archive readiness report. Verification stays local
+to the exported payload: it reruns reconciliation, regenerates the expected
+baseline snapshot, and rejects any bundle whose embedded digests or lineage
+metadata drift from the recomputed state.
+
+`signer-rotation-ledger-archive-index` builds a compact archive manifest over a
+set of retained export packages. The index summarizes current policy versions,
+latest receipt lineage, archive readiness, and duplicate or contradictory
+baseline metadata across the retained package set.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -271,6 +284,8 @@ currently supports:
 - `signer-rotation-ledger-append`
 - `signer-rotation-ledger-reconcile`
 - `signer-rotation-ledger-export`
+- `signer-rotation-ledger-verify-export`
+- `signer-rotation-ledger-archive-index`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
