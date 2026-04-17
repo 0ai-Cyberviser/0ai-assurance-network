@@ -245,3 +245,144 @@ func TestSignerRotationReceiptFailsOnInvalidEffectiveAtOrdering(t *testing.T) {
 		t.Fatalf("expected effective_at ordering error, got %v", err)
 	}
 }
+
+func mustSignerRotationReceipt(t *testing.T, bundle Bundle) SignerRotationReceiptOutput {
+	t.Helper()
+
+	receipt, err := SignerRotationReceipt(bundle, SignerRotationReceiptRequest{
+		OutgoingSignerID: "governance-chair-bot",
+		IncomingSignerID: "governance-chair-bot-v2",
+		IncomingKeyID:    "governance-chair-dev-v2",
+		EffectiveAt:      "2026-04-24T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationReceipt failed: %v", err)
+	}
+	return receipt
+}
+
+func TestSignerRotationApproval(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	receipt := mustSignerRotationReceipt(t, bundle)
+	approval, err := GenerateSignerRotationApproval(bundle, SignerRotationApprovalRequest{
+		Receipt:      receipt,
+		ApprovalRole: "governance-ops",
+		SignerID:     "governance-ops-bot",
+		ApprovedAt:   "2026-04-23T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("GenerateSignerRotationApproval failed: %v", err)
+	}
+	if approval.ReceiptID != receipt.ReceiptID {
+		t.Fatalf("unexpected receipt id: %s", approval.ReceiptID)
+	}
+	if approval.ApprovalRole != "governance-ops" {
+		t.Fatalf("unexpected approval role: %s", approval.ApprovalRole)
+	}
+	if approval.Signature.Value == "" || approval.Signature.SignatureID == "" {
+		t.Fatalf("expected signature metadata, got %+v", approval.Signature)
+	}
+}
+
+func TestSignerRotationFinalize(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	receipt := mustSignerRotationReceipt(t, bundle)
+	approvals := []SignerRotationApproval{}
+	for _, item := range []struct {
+		role     string
+		signerID string
+	}{
+		{role: "governance-ops", signerID: "governance-ops-bot"},
+		{role: "token-house-secretariat", signerID: "token-house-secretariat-bot"},
+		{role: "telemetry-ops", signerID: "telemetry-ops-bot"},
+	} {
+		approval, err := GenerateSignerRotationApproval(bundle, SignerRotationApprovalRequest{
+			Receipt:      receipt,
+			ApprovalRole: item.role,
+			SignerID:     item.signerID,
+			ApprovedAt:   "2026-04-23T00:00:00Z",
+		})
+		if err != nil {
+			t.Fatalf("GenerateSignerRotationApproval(%s) failed: %v", item.role, err)
+		}
+		approvals = append(approvals, approval)
+	}
+
+	finalized, err := SignerRotationFinalize(bundle, SignerRotationFinalizeRequest{
+		Receipt:   receipt,
+		Approvals: approvals,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationFinalize failed: %v", err)
+	}
+	if finalized.Status != "approved" {
+		t.Fatalf("unexpected finalized status: %s", finalized.Status)
+	}
+	if len(finalized.Approvals) != 3 {
+		t.Fatalf("expected 3 approvals, got %d", len(finalized.Approvals))
+	}
+	if finalized.ReplacementManifestRef != receipt.ReplacementManifestRef {
+		t.Fatalf("unexpected replacement manifest ref: %s", finalized.ReplacementManifestRef)
+	}
+}
+
+func TestSignerRotationFinalizeFailsOnMissingApprovalCoverage(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	receipt := mustSignerRotationReceipt(t, bundle)
+	approval, err := GenerateSignerRotationApproval(bundle, SignerRotationApprovalRequest{
+		Receipt:      receipt,
+		ApprovalRole: "governance-ops",
+		SignerID:     "governance-ops-bot",
+		ApprovedAt:   "2026-04-23T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("GenerateSignerRotationApproval failed: %v", err)
+	}
+
+	_, err = SignerRotationFinalize(bundle, SignerRotationFinalizeRequest{
+		Receipt:   receipt,
+		Approvals: []SignerRotationApproval{approval},
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing approval coverage for roles") {
+		t.Fatalf("expected missing approval coverage error, got %v", err)
+	}
+}
+
+func TestSignerRotationFinalizeFailsOnApprovalReceiptDrift(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	receipt := mustSignerRotationReceipt(t, bundle)
+	approval, err := GenerateSignerRotationApproval(bundle, SignerRotationApprovalRequest{
+		Receipt:      receipt,
+		ApprovalRole: "governance-ops",
+		SignerID:     "governance-ops-bot",
+		ApprovedAt:   "2026-04-23T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("GenerateSignerRotationApproval failed: %v", err)
+	}
+	approval.ReceiptDigest = "deadbeef"
+
+	_, err = SignerRotationFinalize(bundle, SignerRotationFinalizeRequest{
+		Receipt:   receipt,
+		Approvals: []SignerRotationApproval{approval},
+	})
+	if err == nil || !strings.Contains(err.Error(), "approval receipt_digest mismatch") {
+		t.Fatalf("expected approval receipt drift error, got %v", err)
+	}
+}

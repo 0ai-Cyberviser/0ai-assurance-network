@@ -100,12 +100,67 @@ The replacement preview only renders when:
 - `effective_at` is after the current reference time and on or before the
   outgoing signer `rotate_by`
 
+## Signed approvals
+
+`0aid signer-rotation-approve` turns a receipt stub into a signed approval
+artifact for one required approval role.
+
+Example:
+
+```bash
+./0aid signer-rotation-approve --root . \
+  --receipt ./build/rotation/governance-chair-receipt.json \
+  --role governance-ops \
+  --signer-id governance-ops-bot \
+  --approved-at 2026-04-23T00:00:00Z \
+  --out ./build/rotation/governance-chair-governance-ops.json
+```
+
+Approval artifacts are bound to the exact receipt by `receipt_id`,
+`receipt_digest`, and `replacement_manifest_ref`, and they are signed with the
+configured development HMAC signer for the selected approval role.
+
+Approvals are rejected when:
+
+- the signer is not eligible for the requested approval role
+- the receipt has drifted from the current checkpoint signer configuration
+- `approved_at` falls before signer `provisioned_at` or after signer `rotate_by`
+- `approved_at` falls after the receipt `effective_at`
+
+## Finalized bundles
+
+`0aid signer-rotation-finalize` validates the full approval set and emits a
+publication-ready bundle containing:
+
+- the original receipt stub
+- the verified approval artifacts
+- the replacement signer manifest preview
+- final bundle metadata such as `status = approved` and `finalized_at`
+
+Example:
+
+```bash
+./0aid signer-rotation-finalize --root . \
+  --receipt ./build/rotation/governance-chair-receipt.json \
+  --approvals ./build/rotation/governance-chair-governance-ops.json,./build/rotation/governance-chair-token-house.json,./build/rotation/governance-chair-telemetry.json \
+  --out ./build/rotation/governance-chair-approved-bundle.json
+```
+
+Finalization fails closed when:
+
+- any required approval role is missing
+- the same signer or actor tries to satisfy multiple approval roles
+- approval signatures do not validate against the configured signer secret
+- approval artifacts reference a different receipt digest or replacement manifest
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
 2. Generate a signer rotation receipt stub for the outgoing signer.
 3. Review the approval actor set and replacement manifest preview.
-4. Collect governance approval against the receipt stub.
-5. Publish the approved receipt together with the replacement signer manifest.
-6. Update `config/governance/checkpoint-signers.json` only after the approved
+4. Collect signed approval artifacts for every required approval role.
+5. Finalize the receipt bundle and verify it remains bound to the replacement
+   manifest preview.
+6. Publish the approved bundle together with the replacement signer manifest.
+7. Update `config/governance/checkpoint-signers.json` only after the approved
    replacement manifest is ready to become the new active state.

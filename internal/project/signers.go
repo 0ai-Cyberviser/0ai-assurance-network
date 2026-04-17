@@ -1,6 +1,10 @@
 package project
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -110,6 +114,67 @@ type SignerRotationReceiptOutput struct {
 	OutgoingSigner            SignerManifestEntry                 `json:"outgoing_signer"`
 	IncomingSigner            SignerRotationReplacement           `json:"incoming_signer"`
 	ApprovalRequirements      []SignerRotationApprovalRequirement `json:"approval_requirements"`
+	CoverageStatus            string                              `json:"coverage_status"`
+	MissingRoleCoverage       []string                            `json:"missing_role_coverage"`
+	ReplacementManifestRef    string                              `json:"replacement_manifest_ref"`
+	ReplacementSignerManifest SignerManifestOutput                `json:"replacement_signer_manifest"`
+}
+
+type SignerRotationApprovalSignature struct {
+	Format      string `json:"format"`
+	SignatureID string `json:"signature_id"`
+	SignedAt    string `json:"signed_at"`
+	ExpiresAt   string `json:"expires_at"`
+	Value       string `json:"value"`
+}
+
+type SignerRotationApproval struct {
+	Version                string                          `json:"version"`
+	ReceiptID              string                          `json:"receipt_id"`
+	ReceiptDigest          string                          `json:"receipt_digest"`
+	ApprovalRole           string                          `json:"approval_role"`
+	ApprovedAt             string                          `json:"approved_at"`
+	SignerID               string                          `json:"signer_id"`
+	KeyID                  string                          `json:"key_id"`
+	ActorID                string                          `json:"actor_id"`
+	ActorDisplayName       string                          `json:"actor_display_name"`
+	OrganizationID         string                          `json:"organization_id,omitempty"`
+	OrganizationName       string                          `json:"organization_name,omitempty"`
+	ReplacementManifestRef string                          `json:"replacement_manifest_ref"`
+	Signature              SignerRotationApprovalSignature `json:"signature"`
+}
+
+type SignerRotationApprovalEnvelope struct {
+	Approvals []SignerRotationApproval `json:"approvals"`
+}
+
+type SignerRotationApprovalRequest struct {
+	Receipt      SignerRotationReceiptOutput
+	ApprovalRole string
+	SignerID     string
+	ApprovedAt   string
+	SignatureID  string
+}
+
+type SignerRotationFinalizeRequest struct {
+	Receipt   SignerRotationReceiptOutput
+	Approvals []SignerRotationApproval
+}
+
+type SignerRotationFinalizedBundle struct {
+	Version                   string                              `json:"version"`
+	Status                    string                              `json:"status"`
+	ReceiptID                 string                              `json:"receipt_id"`
+	ReceiptDigest             string                              `json:"receipt_digest"`
+	ChainID                   string                              `json:"chain_id"`
+	PolicyVersion             string                              `json:"policy_version"`
+	IdentityVersion           string                              `json:"identity_version"`
+	FinalizedAt               string                              `json:"finalized_at"`
+	EffectiveAt               string                              `json:"effective_at"`
+	OutgoingSigner            SignerManifestEntry                 `json:"outgoing_signer"`
+	IncomingSigner            SignerRotationReplacement           `json:"incoming_signer"`
+	ApprovalRequirements      []SignerRotationApprovalRequirement `json:"approval_requirements"`
+	Approvals                 []SignerRotationApproval            `json:"approvals"`
 	CoverageStatus            string                              `json:"coverage_status"`
 	MissingRoleCoverage       []string                            `json:"missing_role_coverage"`
 	ReplacementManifestRef    string                              `json:"replacement_manifest_ref"`
@@ -614,6 +679,281 @@ func approvalRequirements(bundle Bundle, parsedSigners []parsedSignerEntry) ([]S
 	return requirements, nil
 }
 
+func signerRotationReceiptDigest(receipt SignerRotationReceiptOutput) (string, error) {
+	encoded, err := json.Marshal(receipt)
+	if err != nil {
+		return "", fmt.Errorf("marshal signer rotation receipt: %w", err)
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func signerRotationApprovalMessage(
+	receipt SignerRotationReceiptOutput,
+	receiptDigest string,
+	approvalRole string,
+	signerID string,
+	keyID string,
+	approvedAt time.Time,
+) string {
+	parts := []string{
+		"0ai-assurance-network/signer-rotation-approval/v1",
+		receipt.Version,
+		receipt.ChainID,
+		receipt.PolicyVersion,
+		receipt.IdentityVersion,
+		receipt.ReceiptID,
+		receiptDigest,
+		receipt.OutgoingSigner.SignerID,
+		receipt.IncomingSigner.SignerID,
+		receipt.IncomingSigner.KeyID,
+		receipt.EffectiveAt,
+		approvalRole,
+		signerID,
+		keyID,
+		approvedAt.UTC().Format(time.RFC3339),
+		receipt.ReplacementManifestRef,
+	}
+	return joinStrings(parts, "\n")
+}
+
+func buildReceiptRequestFromOutput(receipt SignerRotationReceiptOutput) SignerRotationReceiptRequest {
+	return SignerRotationReceiptRequest{
+		OutgoingSignerID:      receipt.OutgoingSigner.SignerID,
+		IncomingSignerID:      receipt.IncomingSigner.SignerID,
+		IncomingKeyID:         receipt.IncomingSigner.KeyID,
+		IncomingActorID:       receipt.IncomingSigner.ActorID,
+		IncomingRoles:         append([]string(nil), receipt.IncomingSigner.Roles...),
+		IncomingProvisionedAt: receipt.IncomingSigner.ProvisionedAt,
+		IncomingRotateBy:      receipt.IncomingSigner.RotateBy,
+		EffectiveAt:           receipt.EffectiveAt,
+		ReceiptID:             receipt.ReceiptID,
+	}
+}
+
+func ensureReceiptMatchesBundle(bundle Bundle, receipt SignerRotationReceiptOutput) (SignerRotationReceiptOutput, string, error) {
+	expected, err := SignerRotationReceipt(bundle, buildReceiptRequestFromOutput(receipt))
+	if err != nil {
+		return SignerRotationReceiptOutput{}, "", err
+	}
+	expectedJSON, err := json.Marshal(expected)
+	if err != nil {
+		return SignerRotationReceiptOutput{}, "", fmt.Errorf("marshal expected signer rotation receipt: %w", err)
+	}
+	actualJSON, err := json.Marshal(receipt)
+	if err != nil {
+		return SignerRotationReceiptOutput{}, "", fmt.Errorf("marshal actual signer rotation receipt: %w", err)
+	}
+	if !bytesEqual(expectedJSON, actualJSON) {
+		return SignerRotationReceiptOutput{}, "", fmt.Errorf("signer rotation receipt drift detected")
+	}
+	receiptDigest, err := signerRotationReceiptDigest(expected)
+	if err != nil {
+		return SignerRotationReceiptOutput{}, "", err
+	}
+	return expected, receiptDigest, nil
+}
+
+func bytesEqual(a []byte, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for idx := range a {
+		if a[idx] != b[idx] {
+			return false
+		}
+	}
+	return true
+}
+
+func signerPolicyEntry(bundle Bundle, signerID string, keyID string) (map[string]any, error) {
+	rawSigners, ok := bundle.CheckpointSigners["signers"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("checkpoint signer list must be configured")
+	}
+	for _, rawSigner := range rawSigners {
+		signer := stringMap(rawSigner)
+		if fmt.Sprint(signer["signer_id"]) == signerID && fmt.Sprint(signer["key_id"]) == keyID {
+			return signer, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown signer_id/key_id pair: %s/%s", signerID, keyID)
+}
+
+func findKeyIDForSigner(bundle Bundle, signerID string) string {
+	rawSigners, ok := bundle.CheckpointSigners["signers"].([]any)
+	if !ok {
+		return ""
+	}
+	for _, rawSigner := range rawSigners {
+		signer := stringMap(rawSigner)
+		if fmt.Sprint(signer["signer_id"]) == signerID {
+			return fmt.Sprint(signer["key_id"])
+		}
+	}
+	return ""
+}
+
+func eligibleApprovalOption(
+	requirements []SignerRotationApprovalRequirement,
+	role string,
+	signerID string,
+) (SignerRotationApprovalOption, error) {
+	for _, requirement := range requirements {
+		if requirement.Role != role {
+			continue
+		}
+		for _, option := range requirement.EligibleSigners {
+			if option.SignerID == signerID {
+				return option, nil
+			}
+		}
+		return SignerRotationApprovalOption{}, fmt.Errorf("signer %s is not eligible to approve role %s", signerID, role)
+	}
+	return SignerRotationApprovalOption{}, fmt.Errorf("unknown approval role: %s", role)
+}
+
+func signerRotationApprovalExpiry(
+	signerRotateBy time.Time,
+	effectiveAt time.Time,
+	approvedAt time.Time,
+	maxValiditySeconds int,
+) time.Time {
+	expiresAt := approvedAt.Add(time.Duration(maxValiditySeconds) * time.Second)
+	if expiresAt.After(signerRotateBy) {
+		expiresAt = signerRotateBy
+	}
+	if expiresAt.After(effectiveAt) {
+		expiresAt = effectiveAt
+	}
+	return expiresAt.UTC()
+}
+
+func verifySignerRotationApproval(
+	bundle Bundle,
+	receipt SignerRotationReceiptOutput,
+	receiptDigest string,
+	approval SignerRotationApproval,
+	seenSignatureIDs map[string]struct{},
+) (SignerRotationApproval, error) {
+	if approval.ReceiptID != receipt.ReceiptID {
+		return SignerRotationApproval{}, fmt.Errorf("approval receipt_id mismatch for role %s", approval.ApprovalRole)
+	}
+	if approval.ReceiptDigest != receiptDigest {
+		return SignerRotationApproval{}, fmt.Errorf("approval receipt_digest mismatch for role %s", approval.ApprovalRole)
+	}
+	if approval.ReplacementManifestRef != receipt.ReplacementManifestRef {
+		return SignerRotationApproval{}, fmt.Errorf("approval replacement_manifest_ref mismatch for role %s", approval.ApprovalRole)
+	}
+	option, err := eligibleApprovalOption(receipt.ApprovalRequirements, approval.ApprovalRole, approval.SignerID)
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	signerEntry, err := signerPolicyEntry(bundle, approval.SignerID, approval.KeyID)
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	if fmt.Sprint(signerEntry["status"]) != "active" {
+		return SignerRotationApproval{}, fmt.Errorf("approval signer %s must be active", approval.SignerID)
+	}
+	approvedAt, err := parseRFC3339(approval.ApprovedAt, "approval approved_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	signedAt, err := parseRFC3339(approval.Signature.SignedAt, "approval signature signed_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	expiresAt, err := parseRFC3339(approval.Signature.ExpiresAt, "approval signature expires_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	if !approvedAt.Equal(signedAt) {
+		return SignerRotationApproval{}, fmt.Errorf("approval signed_at must equal approved_at for role %s", approval.ApprovalRole)
+	}
+	effectiveAt, err := parseRFC3339(receipt.EffectiveAt, "receipt effective_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	provisionedAt, err := parseRFC3339(signerEntry["provisioned_at"], "checkpoint signer provisioned_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	rotateBy, err := parseRFC3339(signerEntry["rotate_by"], "checkpoint signer rotate_by")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	if approvedAt.Before(provisionedAt) {
+		return SignerRotationApproval{}, fmt.Errorf("approval approved_at must be on or after signer provisioned_at for role %s", approval.ApprovalRole)
+	}
+	if approvedAt.After(rotateBy) {
+		return SignerRotationApproval{}, fmt.Errorf("approval approved_at must be on or before signer rotate_by for role %s", approval.ApprovalRole)
+	}
+	if approvedAt.After(effectiveAt) {
+		return SignerRotationApproval{}, fmt.Errorf("approval approved_at must be on or before receipt effective_at for role %s", approval.ApprovalRole)
+	}
+	maxValiditySeconds, err := intValue(bundle.CheckpointSigners["maximum_signature_validity_seconds"])
+	if err != nil || maxValiditySeconds <= 0 {
+		return SignerRotationApproval{}, fmt.Errorf("checkpoint signer validity window must be positive")
+	}
+	expectedExpiry := signerRotationApprovalExpiry(rotateBy, effectiveAt, approvedAt, maxValiditySeconds)
+	if !expiresAt.Equal(expectedExpiry) {
+		return SignerRotationApproval{}, fmt.Errorf("approval signature expires_at mismatch for role %s", approval.ApprovalRole)
+	}
+	if approval.Signature.Format != fmt.Sprint(bundle.CheckpointSigners["signature_format"]) {
+		return SignerRotationApproval{}, fmt.Errorf("approval signature format mismatch for role %s", approval.ApprovalRole)
+	}
+	if approval.Signature.SignatureID == "" {
+		return SignerRotationApproval{}, fmt.Errorf("approval signature_id must be set for role %s", approval.ApprovalRole)
+	}
+	if _, exists := seenSignatureIDs[approval.Signature.SignatureID]; exists {
+		return SignerRotationApproval{}, fmt.Errorf("duplicate approval signature_id: %s", approval.Signature.SignatureID)
+	}
+	if approval.ActorID != option.ActorID {
+		return SignerRotationApproval{}, fmt.Errorf("approval actor mismatch for role %s", approval.ApprovalRole)
+	}
+	if approval.ActorDisplayName != option.ActorDisplayName {
+		return SignerRotationApproval{}, fmt.Errorf("approval actor display name mismatch for role %s", approval.ApprovalRole)
+	}
+	if approval.OrganizationID != option.OrganizationID || approval.OrganizationName != option.OrganizationName {
+		return SignerRotationApproval{}, fmt.Errorf("approval organization mismatch for role %s", approval.ApprovalRole)
+	}
+
+	signingMessage := signerRotationApprovalMessage(
+		receipt,
+		receiptDigest,
+		approval.ApprovalRole,
+		approval.SignerID,
+		approval.KeyID,
+		approvedAt,
+	)
+	expectedSignature := hmac.New(sha256.New, []byte(fmt.Sprint(signerEntry["shared_secret"])))
+	expectedSignature.Write([]byte(signingMessage))
+	expectedValue := hex.EncodeToString(expectedSignature.Sum(nil))
+	if !hmac.Equal([]byte(expectedValue), []byte(approval.Signature.Value)) {
+		return SignerRotationApproval{}, fmt.Errorf("approval signature verification failed for role %s", approval.ApprovalRole)
+	}
+	seenSignatureIDs[approval.Signature.SignatureID] = struct{}{}
+	return approval, nil
+}
+
+func finalizedAt(approvals []SignerRotationApproval) (string, error) {
+	latest := time.Time{}
+	for _, approval := range approvals {
+		approvedAt, err := parseRFC3339(approval.ApprovedAt, "approval approved_at")
+		if err != nil {
+			return "", err
+		}
+		if approvedAt.After(latest) {
+			latest = approvedAt
+		}
+	}
+	if latest.IsZero() {
+		return "", fmt.Errorf("at least one approval is required")
+	}
+	return latest.Format(time.RFC3339), nil
+}
+
 func SignerRotationReceipt(bundle Bundle, request SignerRotationReceiptRequest) (SignerRotationReceiptOutput, error) {
 	if err := ValidateSignerManifestInputs(bundle); err != nil {
 		return SignerRotationReceiptOutput{}, err
@@ -772,6 +1112,185 @@ func SignerRotationReceipt(bundle Bundle, request SignerRotationReceiptRequest) 
 		MissingRoleCoverage:       []string{},
 		ReplacementManifestRef:    replacementManifestRef,
 		ReplacementSignerManifest: previewManifest,
+	}, nil
+}
+
+func GenerateSignerRotationApproval(bundle Bundle, request SignerRotationApprovalRequest) (SignerRotationApproval, error) {
+	if err := ValidateSignerManifestInputs(bundle); err != nil {
+		return SignerRotationApproval{}, err
+	}
+	receipt, receiptDigest, err := ensureReceiptMatchesBundle(bundle, request.Receipt)
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	if strings.TrimSpace(request.ApprovalRole) == "" {
+		return SignerRotationApproval{}, fmt.Errorf("approval role must be set")
+	}
+	if strings.TrimSpace(request.SignerID) == "" {
+		return SignerRotationApproval{}, fmt.Errorf("approval signer id must be set")
+	}
+	option, err := eligibleApprovalOption(receipt.ApprovalRequirements, request.ApprovalRole, request.SignerID)
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	signerEntry, err := signerPolicyEntry(bundle, request.SignerID, findKeyIDForSigner(bundle, request.SignerID))
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	approvedAt, err := parseRFC3339(request.ApprovedAt, "approval approved_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	effectiveAt, err := parseRFC3339(receipt.EffectiveAt, "receipt effective_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	provisionedAt, err := parseRFC3339(signerEntry["provisioned_at"], "checkpoint signer provisioned_at")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	rotateBy, err := parseRFC3339(signerEntry["rotate_by"], "checkpoint signer rotate_by")
+	if err != nil {
+		return SignerRotationApproval{}, err
+	}
+	if approvedAt.Before(provisionedAt) {
+		return SignerRotationApproval{}, fmt.Errorf("approval approved_at must be on or after signer provisioned_at for role %s", request.ApprovalRole)
+	}
+	if approvedAt.After(rotateBy) {
+		return SignerRotationApproval{}, fmt.Errorf("approval approved_at must be on or before signer rotate_by for role %s", request.ApprovalRole)
+	}
+	if approvedAt.After(effectiveAt) {
+		return SignerRotationApproval{}, fmt.Errorf("approval approved_at must be on or before receipt effective_at for role %s", request.ApprovalRole)
+	}
+	maxValiditySeconds, err := intValue(bundle.CheckpointSigners["maximum_signature_validity_seconds"])
+	if err != nil || maxValiditySeconds <= 0 {
+		return SignerRotationApproval{}, fmt.Errorf("checkpoint signer validity window must be positive")
+	}
+	signatureID := request.SignatureID
+	if signatureID == "" {
+		signatureID = fmt.Sprintf(
+			"approve-%s-%s-%s",
+			receipt.ReceiptID,
+			request.ApprovalRole,
+			strings.ToLower(approvedAt.UTC().Format("20060102t150405z")),
+		)
+	}
+	expiresAt := signerRotationApprovalExpiry(rotateBy, effectiveAt, approvedAt, maxValiditySeconds)
+	signingMessage := signerRotationApprovalMessage(
+		receipt,
+		receiptDigest,
+		request.ApprovalRole,
+		fmt.Sprint(signerEntry["signer_id"]),
+		fmt.Sprint(signerEntry["key_id"]),
+		approvedAt,
+	)
+	mac := hmac.New(sha256.New, []byte(fmt.Sprint(signerEntry["shared_secret"])))
+	mac.Write([]byte(signingMessage))
+	organizationID := option.OrganizationID
+	organizationName := option.OrganizationName
+	return SignerRotationApproval{
+		Version:                "1.0.0",
+		ReceiptID:              receipt.ReceiptID,
+		ReceiptDigest:          receiptDigest,
+		ApprovalRole:           request.ApprovalRole,
+		ApprovedAt:             approvedAt.Format(time.RFC3339),
+		SignerID:               fmt.Sprint(signerEntry["signer_id"]),
+		KeyID:                  fmt.Sprint(signerEntry["key_id"]),
+		ActorID:                option.ActorID,
+		ActorDisplayName:       option.ActorDisplayName,
+		OrganizationID:         organizationID,
+		OrganizationName:       organizationName,
+		ReplacementManifestRef: receipt.ReplacementManifestRef,
+		Signature: SignerRotationApprovalSignature{
+			Format:      fmt.Sprint(bundle.CheckpointSigners["signature_format"]),
+			SignatureID: signatureID,
+			SignedAt:    approvedAt.Format(time.RFC3339),
+			ExpiresAt:   expiresAt.Format(time.RFC3339),
+			Value:       hex.EncodeToString(mac.Sum(nil)),
+		},
+	}, nil
+}
+
+func SignerRotationFinalize(bundle Bundle, request SignerRotationFinalizeRequest) (SignerRotationFinalizedBundle, error) {
+	if err := ValidateSignerManifestInputs(bundle); err != nil {
+		return SignerRotationFinalizedBundle{}, err
+	}
+	if len(request.Approvals) == 0 {
+		return SignerRotationFinalizedBundle{}, fmt.Errorf("at least one approval artifact is required")
+	}
+	receipt, receiptDigest, err := ensureReceiptMatchesBundle(bundle, request.Receipt)
+	if err != nil {
+		return SignerRotationFinalizedBundle{}, err
+	}
+	requiredRoles := make(map[string]struct{}, len(receipt.ApprovalRequirements))
+	for _, requirement := range receipt.ApprovalRequirements {
+		requiredRoles[requirement.Role] = struct{}{}
+	}
+	seenRoles := make(map[string]struct{}, len(requiredRoles))
+	seenSigners := make(map[string]struct{}, len(request.Approvals))
+	seenActors := make(map[string]struct{}, len(request.Approvals))
+	seenSignatureIDs := make(map[string]struct{}, len(request.Approvals))
+	verifiedApprovals := make([]SignerRotationApproval, 0, len(request.Approvals))
+	for _, approval := range request.Approvals {
+		if _, exists := requiredRoles[approval.ApprovalRole]; !exists {
+			return SignerRotationFinalizedBundle{}, fmt.Errorf("unexpected approval role: %s", approval.ApprovalRole)
+		}
+		if _, exists := seenRoles[approval.ApprovalRole]; exists {
+			return SignerRotationFinalizedBundle{}, fmt.Errorf("duplicate approval role: %s", approval.ApprovalRole)
+		}
+		if _, exists := seenSigners[approval.SignerID]; exists {
+			return SignerRotationFinalizedBundle{}, fmt.Errorf("duplicate approval signer: %s", approval.SignerID)
+		}
+		if _, exists := seenActors[approval.ActorID]; exists {
+			return SignerRotationFinalizedBundle{}, fmt.Errorf("duplicate approval actor ownership: %s", approval.ActorID)
+		}
+		verified, err := verifySignerRotationApproval(bundle, receipt, receiptDigest, approval, seenSignatureIDs)
+		if err != nil {
+			return SignerRotationFinalizedBundle{}, err
+		}
+		seenRoles[verified.ApprovalRole] = struct{}{}
+		seenSigners[verified.SignerID] = struct{}{}
+		seenActors[verified.ActorID] = struct{}{}
+		verifiedApprovals = append(verifiedApprovals, verified)
+	}
+	missingRoles := make([]string, 0)
+	for role := range requiredRoles {
+		if _, exists := seenRoles[role]; !exists {
+			missingRoles = append(missingRoles, role)
+		}
+	}
+	sort.Strings(missingRoles)
+	if len(missingRoles) > 0 {
+		return SignerRotationFinalizedBundle{}, fmt.Errorf("missing approval coverage for roles: %s", commaList(missingRoles))
+	}
+	sort.Slice(verifiedApprovals, func(i, j int) bool {
+		if verifiedApprovals[i].ApprovalRole == verifiedApprovals[j].ApprovalRole {
+			return verifiedApprovals[i].SignerID < verifiedApprovals[j].SignerID
+		}
+		return verifiedApprovals[i].ApprovalRole < verifiedApprovals[j].ApprovalRole
+	})
+	finalizedAtValue, err := finalizedAt(verifiedApprovals)
+	if err != nil {
+		return SignerRotationFinalizedBundle{}, err
+	}
+	return SignerRotationFinalizedBundle{
+		Version:                   "1.0.0",
+		Status:                    "approved",
+		ReceiptID:                 receipt.ReceiptID,
+		ReceiptDigest:             receiptDigest,
+		ChainID:                   receipt.ChainID,
+		PolicyVersion:             receipt.PolicyVersion,
+		IdentityVersion:           receipt.IdentityVersion,
+		FinalizedAt:               finalizedAtValue,
+		EffectiveAt:               receipt.EffectiveAt,
+		OutgoingSigner:            receipt.OutgoingSigner,
+		IncomingSigner:            receipt.IncomingSigner,
+		ApprovalRequirements:      receipt.ApprovalRequirements,
+		Approvals:                 verifiedApprovals,
+		CoverageStatus:            "approved",
+		MissingRoleCoverage:       []string{},
+		ReplacementManifestRef:    receipt.ReplacementManifestRef,
+		ReplacementSignerManifest: receipt.ReplacementSignerManifest,
 	}, nil
 }
 
