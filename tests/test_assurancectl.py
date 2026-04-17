@@ -289,6 +289,32 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertEqual(payload[2]["proposal_id"], "draft-grant-001")
         self.assertEqual(payload[2]["drift"]["drift_attention"], "review")
 
+    def test_governance_queue_writes_versioned_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "queue-artifact.json"
+            result = self.run_cli(
+                "governance-queue",
+                "--registry",
+                "examples/proposals/registry.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--artifact-out",
+                str(artifact_path),
+                "--json",
+            )
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload[0]["proposal_id"], "draft-pause-001")
+        self.assertEqual(artifact["schema"], "0ai.assurance.governance.artifact")
+        self.assertEqual(artifact["schema_version"], "1.0.0")
+        self.assertEqual(artifact["artifact_type"], "governance_queue")
+        self.assertEqual(artifact["command"], "governance-queue")
+        self.assertEqual(artifact["sources"]["registry"], "examples/proposals/registry.json")
+        self.assertEqual(artifact["sources"]["history"], "examples/proposals/history.json")
+        self.assertEqual(artifact["payload"][0]["proposal_id"], "draft-pause-001")
+
     def test_governance_trends_clusters_portfolio_signals(self) -> None:
         result = self.run_cli(
             "governance-trends",
@@ -312,6 +338,95 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertEqual(payload[2]["highest_drift_attention"], "review")
         self.assertEqual(payload[2]["trend_velocity"], "elevated")
         self.assertEqual(payload[2]["seasonal_pressure"], "watch")
+
+    def test_governance_trends_writes_versioned_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "trends-artifact.json"
+            result = self.run_cli(
+                "governance-trends",
+                "--registry",
+                "examples/proposals/registry.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--artifact-out",
+                str(artifact_path),
+                "--json",
+            )
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload[0]["trend_cluster"], "emergency_pause:safety-council")
+        self.assertEqual(artifact["artifact_type"], "governance_trends")
+        self.assertEqual(artifact["payload"][0]["trend_cluster"], "emergency_pause:safety-council")
+
+    def test_governance_sim_with_history_writes_versioned_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "sim-artifact.json"
+            result = self.run_cli(
+                "governance-sim",
+                "--proposal",
+                "examples/proposals/treasury-grant.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--artifact-out",
+                str(artifact_path),
+                "--json",
+            )
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertIn("report", payload)
+        self.assertEqual(artifact["artifact_type"], "governance_simulation_with_drift")
+        self.assertEqual(artifact["payload"]["report"]["proposal_id"], "draft-grant-001")
+        self.assertEqual(artifact["payload"]["drift"]["drift_attention"], "review")
+
+    def test_governance_drift_writes_versioned_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "drift-artifact.json"
+            result = self.run_cli(
+                "governance-drift",
+                "--proposal",
+                "examples/proposals/emergency-pause.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--artifact-out",
+                str(artifact_path),
+                "--json",
+            )
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["drift_attention"], "escalate")
+        self.assertEqual(artifact["artifact_type"], "governance_drift")
+        self.assertEqual(artifact["payload"]["drift_attention"], "escalate")
+
+    def test_governance_replay_writes_versioned_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            event_path = Path(tmpdir) / "events.json"
+            event_path.write_text(
+                (PROJECT_ROOT / "examples" / "proposals" / "checkpoint-events.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            artifact_path = Path(tmpdir) / "replay-artifact.json"
+            result = self.run_cli(
+                "governance-replay",
+                "--status",
+                str(event_path),
+                "--artifact-out",
+                str(artifact_path),
+                "--json",
+            )
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["source_kind"], "event_log")
+        self.assertEqual(artifact["artifact_type"], "governance_replay")
+        self.assertEqual(artifact["sources"]["status"], str(event_path))
+        self.assertEqual(artifact["payload"]["source_kind"], "event_log")
 
     def test_governance_remediation_emits_structured_plans(self) -> None:
         result = self.run_cli(
@@ -375,6 +490,28 @@ class AssuranceCtlTests(unittest.TestCase):
                 for checkpoint in payload[2]["checkpoints"]
             )
         )
+
+    def test_governance_remediation_writes_versioned_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_path = Path(tmpdir) / "remediation-artifact.json"
+            result = self.run_cli(
+                "governance-remediation",
+                "--registry",
+                "examples/proposals/registry.json",
+                "--history",
+                "examples/proposals/history.json",
+                "--artifact-out",
+                str(artifact_path),
+                "--json",
+            )
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload[0]["trend_cluster"], "emergency_pause:safety-council")
+        self.assertEqual(artifact["artifact_type"], "governance_remediation")
+        self.assertEqual(artifact["payload"][0]["trend_cluster"], "emergency_pause:safety-council")
+        self.assertEqual(artifact["compatibility"]["breaking_change"], "increment major")
 
     def test_governance_remediation_status_rollup_updates_current_readiness(self) -> None:
         baseline = self.run_cli(
