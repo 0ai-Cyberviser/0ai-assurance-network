@@ -384,6 +384,65 @@ Index generation fails closed when retained packages overlap on the same
 current policy version, reuse the same latest receipt id, or disagree on chain
 or policy path metadata.
 
+## Archive promotion receipts
+
+`0aid signer-rotation-ledger-archive-promote` emits a deterministic receipt
+proving that one verified export package was formally promoted into retained
+archive state.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-archive-promote \
+  --export ./build/rotation/governance-chair-audit-export.json \
+  --verify ./build/rotation/governance-chair-audit-export-verify.json \
+  --archive-index ./build/rotation/activation-audit-archive-index.json \
+  --promoted-at 2026-04-24T01:00:00Z \
+  --out ./build/rotation/governance-chair-archive-promotion.json
+```
+
+Promotion fails closed unless:
+
+- the supplied verification report exactly matches a recomputed verification of
+  the export package
+- the export package is still `archive_ready`
+- the archive index is internally consistent and in `consistent` status
+- the archive index contains an entry for the package path whose metadata
+  exactly matches the verified export lineage
+
+The promotion receipt binds:
+
+- the promoted package path
+- current policy version and digest
+- baseline lineage (`latest_receipt_id`, `latest_target_policy_version`)
+- digests for the export package, baseline snapshot, verification report,
+  archive index, and matched archive entry
+
+## Retained baseline attestations
+
+`0aid signer-rotation-ledger-attest-retained-baseline` emits a machine-readable
+attestation tied to one retained archive entry and its promotion receipt.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-attest-retained-baseline \
+  --promotion-receipt ./build/rotation/governance-chair-archive-promotion.json \
+  --attested-at 2026-04-24T01:05:00Z \
+  --out ./build/rotation/governance-chair-retained-baseline-attestation.json
+```
+
+The attestation records:
+
+- the promotion receipt id and digest
+- the retained package path and policy lineage
+- digests for the promoted export package, baseline snapshot, verification
+  report, archive index, and archive entry
+- promotion and attestation timestamps
+
+Attestation fails closed when the promotion receipt is not already in retained
+state or when the attestation timestamp predates the promotion timestamp.
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -407,4 +466,9 @@ or policy path metadata.
 13. Export the policy, ledger, and reconciliation state into a stable audit
     package before archiving the rotation baseline.
 14. Verify that archived export package before accepting it as a retained baseline.
-15. Rebuild the archive index manifest whenever a new retained baseline is added.
+15. Rebuild the archive index manifest so the candidate retained baseline is
+    represented as a concrete archive entry.
+16. Promote the verified export package into retained archive state using that
+    archive index entry.
+17. Emit a retained-baseline attestation tied to the promotion receipt and
+    archive entry lineage.

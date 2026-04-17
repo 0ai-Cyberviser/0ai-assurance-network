@@ -87,6 +87,8 @@ make -C projects/0ai-assurance-network signer-rotation-ledger-reconcile LEDGER=b
 make -C projects/0ai-assurance-network signer-rotation-ledger-export LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json OUT=build/rotation/governance-chair-audit-export.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-verify-export EXPORT=build/rotation/governance-chair-audit-export.json OUT=build/rotation/governance-chair-audit-export-verify.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-archive-index EXPORTS=build/rotation/current-audit-export.json,build/rotation/governance-chair-audit-export.json OUT=build/rotation/activation-audit-archive-index.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z OUT=build/rotation/governance-chair-archive-promotion.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-attest-retained-baseline PROMOTION_RECEIPT=build/rotation/governance-chair-archive-promotion.json ATTESTED_AT=2026-04-24T01:05:00Z OUT=build/rotation/governance-chair-retained-baseline-attestation.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json

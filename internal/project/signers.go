@@ -444,6 +444,66 @@ type SignerRotationActivationAuditArchiveIndex struct {
 	Issues                     []string                                         `json:"issues"`
 }
 
+type SignerRotationActivationAuditArchivePromotionRequest struct {
+	PackagePath        string
+	ExportPackage      SignerRotationActivationAuditExportPackage
+	VerificationReport SignerRotationActivationAuditExportVerificationReport
+	ArchiveIndex       SignerRotationActivationAuditArchiveIndex
+	PromotedAt         string
+	ReceiptID          string
+}
+
+type SignerRotationActivationAuditArchivePromotionReceipt struct {
+	Version                string `json:"version"`
+	Status                 string `json:"status"`
+	ReceiptID              string `json:"receipt_id"`
+	PackagePath            string `json:"package_path"`
+	ChainID                string `json:"chain_id"`
+	PolicyPath             string `json:"policy_path"`
+	CurrentPolicyVersion   string `json:"current_policy_version"`
+	CurrentPolicyDigest    string `json:"current_policy_digest"`
+	EntryCount             int    `json:"entry_count"`
+	LatestReceiptID        string `json:"latest_receipt_id,omitempty"`
+	LatestTargetVersion    string `json:"latest_target_policy_version,omitempty"`
+	VerificationStatus     string `json:"verification_status"`
+	ArchiveIndexStatus     string `json:"archive_index_status"`
+	ExportPackageDigest    string `json:"export_package_digest"`
+	BaselineSnapshotDigest string `json:"baseline_snapshot_digest"`
+	VerificationDigest     string `json:"verification_digest"`
+	ArchiveIndexDigest     string `json:"archive_index_digest"`
+	ArchiveEntryDigest     string `json:"archive_entry_digest"`
+	PromotedAt             string `json:"promoted_at"`
+}
+
+type SignerRotationActivationAuditRetainedBaselineAttestationRequest struct {
+	PromotionReceipt SignerRotationActivationAuditArchivePromotionReceipt
+	AttestedAt       string
+	AttestationID    string
+}
+
+type SignerRotationActivationAuditRetainedBaselineAttestation struct {
+	Version                string `json:"version"`
+	Status                 string `json:"status"`
+	AttestationID          string `json:"attestation_id"`
+	PromotionReceiptID     string `json:"promotion_receipt_id"`
+	PromotionReceiptDigest string `json:"promotion_receipt_digest"`
+	PackagePath            string `json:"package_path"`
+	ChainID                string `json:"chain_id"`
+	PolicyPath             string `json:"policy_path"`
+	CurrentPolicyVersion   string `json:"current_policy_version"`
+	CurrentPolicyDigest    string `json:"current_policy_digest"`
+	EntryCount             int    `json:"entry_count"`
+	LatestReceiptID        string `json:"latest_receipt_id,omitempty"`
+	LatestTargetVersion    string `json:"latest_target_policy_version,omitempty"`
+	ExportPackageDigest    string `json:"export_package_digest"`
+	BaselineSnapshotDigest string `json:"baseline_snapshot_digest"`
+	VerificationDigest     string `json:"verification_digest"`
+	ArchiveIndexDigest     string `json:"archive_index_digest"`
+	ArchiveEntryDigest     string `json:"archive_entry_digest"`
+	PromotedAt             string `json:"promoted_at"`
+	AttestedAt             string `json:"attested_at"`
+}
+
 type parsedSignerEntry struct {
 	ActorID           string
 	SignerID          string
@@ -1357,6 +1417,15 @@ func checkpointSignerPolicyDigest(policy CheckpointSignerPolicyOutput) (string, 
 	encoded, err := json.Marshal(policy)
 	if err != nil {
 		return "", fmt.Errorf("marshal checkpoint signer policy: %w", err)
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func activationAuditJSONDigest(label string, value any) (string, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("marshal %s: %w", label, err)
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:]), nil
@@ -2634,6 +2703,315 @@ func BuildSignerRotationActivationAuditArchiveIndex(
 	}
 	index.Status = "consistent"
 	return index, nil
+}
+
+func activationAuditArchiveIndexEntry(
+	packagePath string,
+	verification SignerRotationActivationAuditExportVerificationReport,
+) SignerRotationActivationAuditArchiveIndexEntry {
+	return SignerRotationActivationAuditArchiveIndexEntry{
+		PackagePath:          packagePath,
+		Status:               verification.Status,
+		ArchiveReady:         verification.ArchiveReady,
+		ChainID:              verification.ChainID,
+		PolicyPath:           verification.PolicyPath,
+		CurrentPolicyVersion: verification.CurrentPolicyVersion,
+		CurrentPolicyDigest:  verification.CurrentPolicyDigest,
+		EntryCount:           verification.EntryCount,
+		LatestReceiptID:      verification.LatestReceiptID,
+		LatestTargetVersion:  verification.LatestTargetVersion,
+		VerificationIssues:   append([]string(nil), verification.VerificationIssues...),
+	}
+}
+
+func ensureActivationAuditArchiveIndexConsistent(index SignerRotationActivationAuditArchiveIndex) error {
+	if index.Version != "1.0.0" {
+		return fmt.Errorf("unexpected activation audit archive index version: %s", index.Version)
+	}
+	if index.Status != "consistent" {
+		return fmt.Errorf("activation audit archive index must be consistent")
+	}
+	if len(index.Issues) > 0 {
+		return fmt.Errorf("activation audit archive index contains issues")
+	}
+	if len(index.Entries) != index.PackageCount {
+		return fmt.Errorf("activation audit archive index package_count mismatch")
+	}
+	archiveReadyCount := 0
+	for _, entry := range index.Entries {
+		if entry.ArchiveReady {
+			archiveReadyCount++
+		}
+	}
+	if archiveReadyCount != index.ArchiveReadyCount {
+		return fmt.Errorf("activation audit archive index archive_ready_count mismatch")
+	}
+	if len(index.Entries) > 0 {
+		latest := index.Entries[len(index.Entries)-1]
+		if latest.CurrentPolicyVersion != index.LatestCurrentPolicyVersion {
+			return fmt.Errorf("activation audit archive index latest_current_policy_version mismatch")
+		}
+		if latest.CurrentPolicyDigest != index.LatestCurrentPolicyDigest {
+			return fmt.Errorf("activation audit archive index latest_current_policy_digest mismatch")
+		}
+	}
+	return nil
+}
+
+func findActivationAuditArchiveIndexEntry(
+	index SignerRotationActivationAuditArchiveIndex,
+	packagePath string,
+) (SignerRotationActivationAuditArchiveIndexEntry, error) {
+	for _, entry := range index.Entries {
+		if entry.PackagePath == packagePath {
+			return entry, nil
+		}
+	}
+	return SignerRotationActivationAuditArchiveIndexEntry{}, fmt.Errorf(
+		"activation audit archive index has no entry for package %s",
+		packagePath,
+	)
+}
+
+func activationAuditArchiveArtifactLabel(packagePath string) string {
+	label := strings.TrimSpace(packagePath)
+	if idx := strings.LastIndex(label, "/"); idx >= 0 {
+		label = label[idx+1:]
+	}
+	label = strings.TrimSuffix(label, ".json")
+	if label == "" {
+		return "baseline"
+	}
+	return label
+}
+
+func activationAuditArchivePromotionReceiptID(packagePath string, promotedAt time.Time) string {
+	return fmt.Sprintf(
+		"archive-promote-%s-%s",
+		activationAuditArchiveArtifactLabel(packagePath),
+		strings.ToLower(promotedAt.UTC().Format("20060102t150405z")),
+	)
+}
+
+func activationAuditRetainedBaselineAttestationID(packagePath string, attestedAt time.Time) string {
+	return fmt.Sprintf(
+		"retained-baseline-%s-%s",
+		activationAuditArchiveArtifactLabel(packagePath),
+		strings.ToLower(attestedAt.UTC().Format("20060102t150405z")),
+	)
+}
+
+func BuildSignerRotationActivationAuditArchivePromotionReceipt(
+	request SignerRotationActivationAuditArchivePromotionRequest,
+) (SignerRotationActivationAuditArchivePromotionReceipt, error) {
+	packagePath := strings.TrimSpace(request.PackagePath)
+	if packagePath == "" {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf("activation audit archive promotion package_path must be set")
+	}
+	promotedAt, err := parseRFC3339(request.PromotedAt, "archive promotion promoted_at")
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	if request.ExportPackage.BaselineSnapshot.LatestEntry != nil {
+		latestEffectiveAt, err := parseRFC3339(
+			request.ExportPackage.BaselineSnapshot.LatestEntry.EffectiveAt,
+			"archive promotion latest baseline effective_at",
+		)
+		if err != nil {
+			return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+		}
+		if promotedAt.Before(latestEffectiveAt) {
+			return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+				"archive promotion promoted_at must be on or after latest baseline effective_at",
+			)
+		}
+	}
+	expectedVerification, err := SignerRotationActivationAuditVerifyExport(
+		SignerRotationActivationAuditExportVerificationRequest{
+			ExportPackage: request.ExportPackage,
+		},
+	)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	expectedVerificationJSON, err := json.Marshal(expectedVerification)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"marshal expected activation audit export verification report: %w",
+			err,
+		)
+	}
+	actualVerificationJSON, err := json.Marshal(request.VerificationReport)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"marshal actual activation audit export verification report: %w",
+			err,
+		)
+	}
+	if !bytesEqual(expectedVerificationJSON, actualVerificationJSON) {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"activation audit export verification drift detected",
+		)
+	}
+	if !expectedVerification.ArchiveReady || expectedVerification.Status != "consistent" {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"activation audit export package must be archive_ready before promotion",
+		)
+	}
+	if err := ensureActivationAuditArchiveIndexConsistent(request.ArchiveIndex); err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	actualEntry, err := findActivationAuditArchiveIndexEntry(request.ArchiveIndex, packagePath)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	expectedEntry := activationAuditArchiveIndexEntry(packagePath, expectedVerification)
+	expectedEntryJSON, err := json.Marshal(expectedEntry)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"marshal expected activation audit archive index entry: %w",
+			err,
+		)
+	}
+	actualEntryJSON, err := json.Marshal(actualEntry)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"marshal actual activation audit archive index entry: %w",
+			err,
+		)
+	}
+	if !bytesEqual(expectedEntryJSON, actualEntryJSON) {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, fmt.Errorf(
+			"activation audit archive index entry drift detected for package %s",
+			packagePath,
+		)
+	}
+
+	receiptID := strings.TrimSpace(request.ReceiptID)
+	if receiptID == "" {
+		receiptID = activationAuditArchivePromotionReceiptID(packagePath, promotedAt)
+	}
+	exportPackageDigest, err := activationAuditJSONDigest("activation audit export package", request.ExportPackage)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	baselineSnapshotDigest, err := activationAuditJSONDigest(
+		"activation audit baseline snapshot",
+		request.ExportPackage.BaselineSnapshot,
+	)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	verificationDigest, err := activationAuditJSONDigest(
+		"activation audit export verification report",
+		expectedVerification,
+	)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	archiveIndexDigest, err := activationAuditJSONDigest("activation audit archive index", request.ArchiveIndex)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+	archiveEntryDigest, err := activationAuditJSONDigest("activation audit archive index entry", actualEntry)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionReceipt{}, err
+	}
+
+	return SignerRotationActivationAuditArchivePromotionReceipt{
+		Version:                "1.0.0",
+		Status:                 "retained",
+		ReceiptID:              receiptID,
+		PackagePath:            packagePath,
+		ChainID:                expectedVerification.ChainID,
+		PolicyPath:             expectedVerification.PolicyPath,
+		CurrentPolicyVersion:   expectedVerification.CurrentPolicyVersion,
+		CurrentPolicyDigest:    expectedVerification.CurrentPolicyDigest,
+		EntryCount:             expectedVerification.EntryCount,
+		LatestReceiptID:        expectedVerification.LatestReceiptID,
+		LatestTargetVersion:    expectedVerification.LatestTargetVersion,
+		VerificationStatus:     expectedVerification.Status,
+		ArchiveIndexStatus:     request.ArchiveIndex.Status,
+		ExportPackageDigest:    exportPackageDigest,
+		BaselineSnapshotDigest: baselineSnapshotDigest,
+		VerificationDigest:     verificationDigest,
+		ArchiveIndexDigest:     archiveIndexDigest,
+		ArchiveEntryDigest:     archiveEntryDigest,
+		PromotedAt:             promotedAt.Format(time.RFC3339),
+	}, nil
+}
+
+func BuildSignerRotationActivationAuditRetainedBaselineAttestation(
+	request SignerRotationActivationAuditRetainedBaselineAttestationRequest,
+) (SignerRotationActivationAuditRetainedBaselineAttestation, error) {
+	receipt := request.PromotionReceipt
+	if receipt.Version != "1.0.0" {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, fmt.Errorf(
+			"unexpected activation audit archive promotion receipt version: %s",
+			receipt.Version,
+		)
+	}
+	if receipt.Status != "retained" {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, fmt.Errorf(
+			"activation audit archive promotion receipt must have retained status",
+		)
+	}
+	if strings.TrimSpace(receipt.ReceiptID) == "" {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, fmt.Errorf(
+			"activation audit archive promotion receipt_id must be set",
+		)
+	}
+	if strings.TrimSpace(receipt.PackagePath) == "" {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, fmt.Errorf(
+			"activation audit archive promotion package_path must be set",
+		)
+	}
+	promotedAt, err := parseRFC3339(receipt.PromotedAt, "archive promotion promoted_at")
+	if err != nil {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, err
+	}
+	attestedAt, err := parseRFC3339(request.AttestedAt, "retained baseline attested_at")
+	if err != nil {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, err
+	}
+	if attestedAt.Before(promotedAt) {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, fmt.Errorf(
+			"retained baseline attested_at must be on or after promoted_at",
+		)
+	}
+	promotionReceiptDigest, err := activationAuditJSONDigest(
+		"activation audit archive promotion receipt",
+		receipt,
+	)
+	if err != nil {
+		return SignerRotationActivationAuditRetainedBaselineAttestation{}, err
+	}
+	attestationID := strings.TrimSpace(request.AttestationID)
+	if attestationID == "" {
+		attestationID = activationAuditRetainedBaselineAttestationID(receipt.PackagePath, attestedAt)
+	}
+	return SignerRotationActivationAuditRetainedBaselineAttestation{
+		Version:                "1.0.0",
+		Status:                 "retained",
+		AttestationID:          attestationID,
+		PromotionReceiptID:     receipt.ReceiptID,
+		PromotionReceiptDigest: promotionReceiptDigest,
+		PackagePath:            receipt.PackagePath,
+		ChainID:                receipt.ChainID,
+		PolicyPath:             receipt.PolicyPath,
+		CurrentPolicyVersion:   receipt.CurrentPolicyVersion,
+		CurrentPolicyDigest:    receipt.CurrentPolicyDigest,
+		EntryCount:             receipt.EntryCount,
+		LatestReceiptID:        receipt.LatestReceiptID,
+		LatestTargetVersion:    receipt.LatestTargetVersion,
+		ExportPackageDigest:    receipt.ExportPackageDigest,
+		BaselineSnapshotDigest: receipt.BaselineSnapshotDigest,
+		VerificationDigest:     receipt.VerificationDigest,
+		ArchiveIndexDigest:     receipt.ArchiveIndexDigest,
+		ArchiveEntryDigest:     receipt.ArchiveEntryDigest,
+		PromotedAt:             receipt.PromotedAt,
+		AttestedAt:             attestedAt.Format(time.RFC3339),
+	}, nil
 }
 
 func archiveEntrySortKey(pkg SignerRotationActivationAuditExportPackage) string {

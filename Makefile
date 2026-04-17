@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-archive-promote signer-rotation-ledger-attest-retained-baseline init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -35,6 +35,8 @@ help:
 	@echo "  signer-rotation-ledger-export Export the activation audit ledger with baseline snapshot and continuity report"
 	@echo "  signer-rotation-ledger-verify-export Verify an exported activation audit package for archive retention"
 	@echo "  signer-rotation-ledger-archive-index Build an archive index manifest over exported audit packages"
+	@echo "  signer-rotation-ledger-archive-promote Emit a receipt promoting a verified export into retained archive state"
+	@echo "  signer-rotation-ledger-attest-retained-baseline Emit a retained-baseline attestation tied to an archive entry"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -144,6 +146,18 @@ signer-rotation-ledger-verify-export:
 signer-rotation-ledger-archive-index:
 	@test -n "$(EXPORTS)" || (echo "Usage: make signer-rotation-ledger-archive-index EXPORTS=build/rotation/current-audit-export.json,build/rotation/governance-chair-audit-export.json" && exit 1)
 	./0aid signer-rotation-ledger-archive-index --exports $(EXPORTS) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-ledger-archive-promote:
+	@test -n "$(EXPORT)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
+	@test -n "$(VERIFY)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
+	@test -n "$(ARCHIVE_INDEX)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
+	@test -n "$(PROMOTED_AT)" || (echo "Usage: make signer-rotation-ledger-archive-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json ARCHIVE_INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T01:00:00Z" && exit 1)
+	./0aid signer-rotation-ledger-archive-promote --export $(EXPORT) --verify $(VERIFY) --archive-index $(ARCHIVE_INDEX) --promoted-at $(PROMOTED_AT) $(if $(RECEIPT_ID),--receipt-id $(RECEIPT_ID),) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-ledger-attest-retained-baseline:
+	@test -n "$(PROMOTION_RECEIPT)" || (echo "Usage: make signer-rotation-ledger-attest-retained-baseline PROMOTION_RECEIPT=build/rotation/governance-chair-archive-promotion.json ATTESTED_AT=2026-04-24T01:05:00Z" && exit 1)
+	@test -n "$(ATTESTED_AT)" || (echo "Usage: make signer-rotation-ledger-attest-retained-baseline PROMOTION_RECEIPT=build/rotation/governance-chair-archive-promotion.json ATTESTED_AT=2026-04-24T01:05:00Z" && exit 1)
+	./0aid signer-rotation-ledger-attest-retained-baseline --promotion-receipt $(PROMOTION_RECEIPT) --attested-at $(ATTESTED_AT) $(if $(ATTESTATION_ID),--attestation-id $(ATTESTATION_ID),) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)

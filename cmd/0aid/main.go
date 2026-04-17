@@ -551,6 +551,92 @@ func run(args []string) error {
 			return errors.New("activation audit archive index verification failed")
 		}
 		return nil
+	case "signer-rotation-ledger-archive-promote":
+		fs := flag.NewFlagSet("signer-rotation-ledger-archive-promote", flag.ContinueOnError)
+		exportPath := fs.String("export", "", "activation audit export package path")
+		verifyPath := fs.String("verify", "", "activation audit export verification report path")
+		archiveIndexPath := fs.String("archive-index", "", "activation audit archive index path")
+		promotedAt := fs.String("promoted-at", "", "archive promotion timestamp")
+		receiptID := fs.String("receipt-id", "", "explicit archive promotion receipt id")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *exportPath == "" {
+			return errors.New("signer-rotation-ledger-archive-promote requires --export")
+		}
+		if *verifyPath == "" {
+			return errors.New("signer-rotation-ledger-archive-promote requires --verify")
+		}
+		if *archiveIndexPath == "" {
+			return errors.New("signer-rotation-ledger-archive-promote requires --archive-index")
+		}
+		if *promotedAt == "" {
+			return errors.New("signer-rotation-ledger-archive-promote requires --promoted-at")
+		}
+		cleanExportPath := filepath.Clean(*exportPath)
+		var exportPackage project.SignerRotationActivationAuditExportPackage
+		if err := readJSONFile(cleanExportPath, &exportPackage); err != nil {
+			return err
+		}
+		var verificationReport project.SignerRotationActivationAuditExportVerificationReport
+		if err := readJSONFile(filepath.Clean(*verifyPath), &verificationReport); err != nil {
+			return err
+		}
+		var archiveIndex project.SignerRotationActivationAuditArchiveIndex
+		if err := readJSONFile(filepath.Clean(*archiveIndexPath), &archiveIndex); err != nil {
+			return err
+		}
+		receipt, err := project.BuildSignerRotationActivationAuditArchivePromotionReceipt(
+			project.SignerRotationActivationAuditArchivePromotionRequest{
+				PackagePath:        filepath.ToSlash(cleanExportPath),
+				ExportPackage:      exportPackage,
+				VerificationReport: verificationReport,
+				ArchiveIndex:       archiveIndex,
+				PromotedAt:         *promotedAt,
+				ReceiptID:          *receiptID,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			return project.WriteJSON(filepath.Clean(*out), receipt)
+		}
+		return printJSON(receipt)
+	case "signer-rotation-ledger-attest-retained-baseline":
+		fs := flag.NewFlagSet("signer-rotation-ledger-attest-retained-baseline", flag.ContinueOnError)
+		promotionReceiptPath := fs.String("promotion-receipt", "", "archive promotion receipt path")
+		attestedAt := fs.String("attested-at", "", "retained baseline attestation timestamp")
+		attestationID := fs.String("attestation-id", "", "explicit retained baseline attestation id")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *promotionReceiptPath == "" {
+			return errors.New("signer-rotation-ledger-attest-retained-baseline requires --promotion-receipt")
+		}
+		if *attestedAt == "" {
+			return errors.New("signer-rotation-ledger-attest-retained-baseline requires --attested-at")
+		}
+		var promotionReceipt project.SignerRotationActivationAuditArchivePromotionReceipt
+		if err := readJSONFile(filepath.Clean(*promotionReceiptPath), &promotionReceipt); err != nil {
+			return err
+		}
+		attestation, err := project.BuildSignerRotationActivationAuditRetainedBaselineAttestation(
+			project.SignerRotationActivationAuditRetainedBaselineAttestationRequest{
+				PromotionReceipt: promotionReceipt,
+				AttestedAt:       *attestedAt,
+				AttestationID:    *attestationID,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			return project.WriteJSON(filepath.Clean(*out), attestation)
+		}
+		return printJSON(attestation)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -719,7 +805,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|signer-rotation-ledger-archive-promote|signer-rotation-ledger-attest-retained-baseline|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
