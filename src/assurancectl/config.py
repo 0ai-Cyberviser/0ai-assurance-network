@@ -21,6 +21,7 @@ class LoadedConfig:
     genesis: dict[str, Any]
     policy: dict[str, Any]
     checkpoint_signers: dict[str, Any]
+    module_plan: dict[str, Any]
 
 
 def root_dir(explicit_root: str | Path | None = None) -> Path:
@@ -43,6 +44,7 @@ def load_config(explicit_root: str | Path | None = None) -> LoadedConfig:
         genesis=_load_json(config / "genesis" / "base-genesis.json"),
         policy=_load_json(config / "policy" / "release-guards.json"),
         checkpoint_signers=_load_json(config / "governance" / "checkpoint-signers.json"),
+        module_plan=_load_json(config / "modules" / "milestone-1.json"),
     )
 
 
@@ -158,8 +160,59 @@ def validate_checkpoint_signers(checkpoint_signers: dict[str, Any]) -> None:
         key_ids.add(key_id)
 
 
+def validate_module_plan(module_plan: dict[str, Any]) -> None:
+    _assert(module_plan["version"] != "", "module plan version must be set")
+    _assert(module_plan["milestone"] != "", "module plan milestone must be set")
+    _assert(module_plan["scope"] != "", "module plan scope must be set")
+
+    module_names: set[str] = set()
+    for collection_name in ("mvp_modules", "dependency_surfaces"):
+        collection = list(module_plan[collection_name])
+        _assert(collection, f"module plan {collection_name} must not be empty")
+        for module in collection:
+            name = str(module["name"])
+            _assert(name not in module_names, f"duplicate module name: {name}")
+            module_names.add(name)
+            _assert(module["purpose"] != "", f"module {name} must declare a purpose")
+            _assert(module["state"], f"module {name} must declare state")
+            _assert(module["transactions"], f"module {name} must declare transactions")
+            _assert(module["operator_permissions"], f"module {name} must declare operator permissions")
+            for state in module["state"]:
+                _assert(state["key"] != "", f"module {name} has state entry with empty key")
+                _assert(state["type"] != "", f"module {name} state {state['key']} must declare a type")
+            transaction_names: set[str] = set()
+            for tx in module["transactions"]:
+                tx_name = str(tx["name"])
+                _assert(tx_name not in transaction_names, f"module {name} has duplicate transaction {tx_name}")
+                _assert(tx["actor_roles"], f"module {name} transaction {tx_name} must declare actor roles")
+                transaction_names.add(tx_name)
+
+    rollout = list(module_plan["rollout"])
+    _assert(rollout, "module plan rollout must not be empty")
+    phase_numbers: list[int] = []
+    phase_names: set[str] = set()
+    for phase in rollout:
+        phase_number = int(phase["phase"])
+        phase_name = str(phase["name"])
+        _assert(phase_name not in phase_names, f"duplicate rollout phase name: {phase_name}")
+        _assert(phase["deliverables"], f"rollout phase {phase_name} must declare deliverables")
+        phase_numbers.append(phase_number)
+        phase_names.add(phase_name)
+    _assert(phase_numbers == list(range(1, len(phase_numbers) + 1)), "rollout phases must be sequential starting at 1")
+    seen_phase_names: set[str] = set()
+    for phase in rollout:
+        phase_name = str(phase["name"])
+        for dependency in phase["depends_on"]:
+            _assert(
+                dependency in seen_phase_names,
+                f"rollout phase {phase_name} depends on unknown or future phase {dependency}",
+            )
+        seen_phase_names.add(phase_name)
+
+
 def validate_all(config: LoadedConfig) -> None:
     validate_topology(config.topology)
     validate_genesis(config.genesis, config.topology)
     validate_policy(config.policy)
     validate_checkpoint_signers(config.checkpoint_signers)
+    validate_module_plan(config.module_plan)

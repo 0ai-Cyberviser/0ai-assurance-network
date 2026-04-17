@@ -20,4 +20,10 @@ func TestLoadBundle(t *testing.T) {
 	if !bundle.Policy.SafeModeDefaults.PermissionedTestnet {
 		t.Fatal("expected permissioned_testnet safe mode")
 	}
+	if bundle.Modules.Milestone != "permissioned-testnet-registry-attestation" {
+		t.Fatalf("unexpected module milestone: %s", bundle.Modules.Milestone)
+	}
+	if len(bundle.Modules.MVPModules) != 2 {
+		t.Fatalf("expected 2 mvp modules, got %d", len(bundle.Modules.MVPModules))
+	}
 }
