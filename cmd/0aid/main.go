@@ -262,6 +262,87 @@ func run(args []string) error {
 			return printJSON(activation)
 		}
 		return project.WriteJSON(filepath.Clean(*out), activation)
+	case "signer-rotation-apply":
+		fs := flag.NewFlagSet("signer-rotation-apply", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		planPath := fs.String("plan", "", "activation plan path")
+		policyOut := fs.String("policy-out", "", "applied policy output path")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *planPath == "" {
+			return errors.New("signer-rotation-apply requires --plan")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		var plan project.SignerRotationActivationPlan
+		if err := readJSONFile(filepath.Clean(*planPath), &plan); err != nil {
+			return err
+		}
+		applyResult, err := project.SignerRotationApply(bundle, project.SignerRotationApplyRequest{
+			ActivationPlan: plan,
+		})
+		if err != nil {
+			return err
+		}
+		if *policyOut != "" {
+			if err := project.WriteJSON(filepath.Clean(*policyOut), applyResult.AppliedPolicy); err != nil {
+				return err
+			}
+		}
+		if *out == "" {
+			return printJSON(applyResult)
+		}
+		return project.WriteJSON(filepath.Clean(*out), applyResult)
+	case "signer-rotation-verify":
+		fs := flag.NewFlagSet("signer-rotation-verify", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		planPath := fs.String("plan", "", "activation plan path")
+		policyPath := fs.String("policy", "", "applied checkpoint signer policy path")
+		verifiedAt := fs.String("verified-at", "", "verification timestamp")
+		signatureID := fs.String("signature-id", "", "explicit signature id")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *planPath == "" {
+			return errors.New("signer-rotation-verify requires --plan")
+		}
+		if *verifiedAt == "" {
+			return errors.New("signer-rotation-verify requires --verified-at")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		var plan project.SignerRotationActivationPlan
+		if err := readJSONFile(filepath.Clean(*planPath), &plan); err != nil {
+			return err
+		}
+		resolvedPolicyPath := strings.TrimSpace(*policyPath)
+		if resolvedPolicyPath == "" {
+			resolvedPolicyPath = filepath.Join(*root, filepath.FromSlash(plan.PolicyPath))
+		}
+		var policy project.CheckpointSignerPolicyOutput
+		if err := readJSONFile(filepath.Clean(resolvedPolicyPath), &policy); err != nil {
+			return err
+		}
+		receipt, err := project.SignerRotationVerify(bundle, project.SignerRotationVerifyRequest{
+			ActivationPlan: plan,
+			Policy:         policy,
+			VerifiedAt:     *verifiedAt,
+			SignatureID:    *signatureID,
+		})
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(receipt)
+		}
+		return project.WriteJSON(filepath.Clean(*out), receipt)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -430,7 +511,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 

@@ -484,3 +484,121 @@ func TestSignerRotationActivationFailsOnBundleDrift(t *testing.T) {
 		t.Fatalf("expected finalized bundle drift error, got %v", err)
 	}
 }
+
+func mustSignerRotationActivationPlan(t *testing.T, bundle Bundle) SignerRotationActivationPlan {
+	t.Helper()
+
+	finalized := mustSignerRotationFinalizedBundle(t, bundle)
+	activation, err := SignerRotationActivation(bundle, SignerRotationActivationRequest{
+		FinalizedBundle:      finalized,
+		IncomingSharedSecret: "dev-secret-governance-chair-v2",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivation failed: %v", err)
+	}
+	return activation
+}
+
+func TestSignerRotationApply(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	plan := mustSignerRotationActivationPlan(t, bundle)
+	result, err := SignerRotationApply(bundle, SignerRotationApplyRequest{
+		ActivationPlan: plan,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationApply failed: %v", err)
+	}
+	if result.Status != "applied" {
+		t.Fatalf("unexpected apply status: %s", result.Status)
+	}
+	if result.TargetPolicyVersion != plan.TargetPolicyVersion {
+		t.Fatalf("unexpected target policy version: %s", result.TargetPolicyVersion)
+	}
+	if result.ActivationPlanDigest == "" || result.AppliedPolicyDigest == "" {
+		t.Fatalf("expected apply digests, got %+v", result)
+	}
+	encodedExpected, err := json.Marshal(plan.ResultingPolicy)
+	if err != nil {
+		t.Fatalf("marshal expected applied policy: %v", err)
+	}
+	encodedActual, err := json.Marshal(result.AppliedPolicy)
+	if err != nil {
+		t.Fatalf("marshal actual applied policy: %v", err)
+	}
+	if !bytesEqual(encodedExpected, encodedActual) {
+		t.Fatalf("applied policy does not match activation result")
+	}
+}
+
+func TestSignerRotationApplyFailsOnPlanDrift(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	plan := mustSignerRotationActivationPlan(t, bundle)
+	plan.PolicyPatch.RemoveSignerID = "nonexistent-signer"
+	_, err = SignerRotationApply(bundle, SignerRotationApplyRequest{
+		ActivationPlan: plan,
+	})
+	if err == nil || !strings.Contains(err.Error(), "signer rotation activation plan drift detected") {
+		t.Fatalf("expected activation plan drift error, got %v", err)
+	}
+}
+
+func TestSignerRotationVerify(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	plan := mustSignerRotationActivationPlan(t, bundle)
+	applied, err := SignerRotationApply(bundle, SignerRotationApplyRequest{
+		ActivationPlan: plan,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationApply failed: %v", err)
+	}
+	receipt, err := SignerRotationVerify(bundle, SignerRotationVerifyRequest{
+		ActivationPlan: plan,
+		Policy:         applied.AppliedPolicy,
+		VerifiedAt:     "2026-04-24T00:15:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationVerify failed: %v", err)
+	}
+	if receipt.Status != "verified" {
+		t.Fatalf("unexpected verification status: %s", receipt.Status)
+	}
+	if receipt.SignerID != "governance-chair-bot-v2" {
+		t.Fatalf("unexpected verification signer: %s", receipt.SignerID)
+	}
+	if receipt.Signature.Value == "" || receipt.Signature.SignatureID == "" {
+		t.Fatalf("expected verification signature metadata, got %+v", receipt.Signature)
+	}
+}
+
+func TestSignerRotationVerifyFailsOnPolicyDrift(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	plan := mustSignerRotationActivationPlan(t, bundle)
+	policy, err := currentSignerPolicy(bundle)
+	if err != nil {
+		t.Fatalf("currentSignerPolicy failed: %v", err)
+	}
+	_, err = SignerRotationVerify(bundle, SignerRotationVerifyRequest{
+		ActivationPlan: plan,
+		Policy:         policy,
+		VerifiedAt:     "2026-04-24T00:15:00Z",
+	})
+	if err == nil || !strings.Contains(err.Error(), "signer rotation applied policy drift detected") {
+		t.Fatalf("expected applied policy drift error, got %v", err)
+	}
+}

@@ -80,6 +80,8 @@ make -C projects/0ai-assurance-network signer-rotation-receipt OUTGOING_SIGNER_I
 make -C projects/0ai-assurance-network signer-rotation-approve RECEIPT=build/rotation/governance-chair-receipt.json ROLE=governance-ops SIGNER_ID=governance-ops-bot APPROVED_AT=2026-04-23T00:00:00Z
 make -C projects/0ai-assurance-network signer-rotation-finalize RECEIPT=build/rotation/governance-chair-receipt.json APPROVALS=build/rotation/governance-chair-governance-ops.json,build/rotation/governance-chair-token-house.json,build/rotation/governance-chair-telemetry.json
 make -C projects/0ai-assurance-network signer-rotation-activate BUNDLE=build/rotation/governance-chair-approved-bundle.json INCOMING_SHARED_SECRET=dev-secret-governance-chair-v2
+make -C projects/0ai-assurance-network signer-rotation-apply PLAN=build/rotation/governance-chair-activation-plan.json POLICY_OUT=build/rotation/governance-chair-applied-policy.json
+make -C projects/0ai-assurance-network signer-rotation-verify PLAN=build/rotation/governance-chair-activation-plan.json POLICY=build/rotation/governance-chair-applied-policy.json VERIFIED_AT=2026-04-24T00:15:00Z
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -209,6 +211,18 @@ activation plan plus a machine-readable replacement policy for
 bundle has drifted from the current policy lineage or when the incoming signer
 secret is missing.
 
+`signer-rotation-apply` validates the activation plan against the current
+policy lineage and emits the exact applied checkpoint signer policy plus stable
+digests for the plan and policy payload. Operators can direct the resulting
+policy into a standalone file with `--policy-out` or write that file directly
+to `config/governance/checkpoint-signers.json`.
+
+`signer-rotation-verify` signs a post-activation verification receipt against
+the applied policy using the newly activated signer. Verification fails closed
+when the applied policy drifts from the activation plan, the outgoing signer is
+still present, the incoming signer is missing, or the verification timestamp
+falls outside the new signer validity window.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -225,6 +239,8 @@ currently supports:
 - `signer-rotation-approve`
 - `signer-rotation-finalize`
 - `signer-rotation-activate`
+- `signer-rotation-apply`
+- `signer-rotation-verify`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
@@ -261,6 +277,15 @@ Bootstrap examples:
   --bundle ./build/rotation/governance-chair-approved-bundle.json \
   --incoming-shared-secret dev-secret-governance-chair-v2 \
   --out ./build/rotation/governance-chair-activation-plan.json
+./0aid signer-rotation-apply --root . \
+  --plan ./build/rotation/governance-chair-activation-plan.json \
+  --policy-out ./build/rotation/governance-chair-applied-policy.json \
+  --out ./build/rotation/governance-chair-apply-result.json
+./0aid signer-rotation-verify --root . \
+  --plan ./build/rotation/governance-chair-activation-plan.json \
+  --policy ./build/rotation/governance-chair-applied-policy.json \
+  --verified-at 2026-04-24T00:15:00Z \
+  --out ./build/rotation/governance-chair-verification.json
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
 ./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
 ./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json
