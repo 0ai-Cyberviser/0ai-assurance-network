@@ -76,6 +76,7 @@ make -C projects/0ai-assurance-network go-test
 make -C projects/0ai-assurance-network module-plan
 make -C projects/0ai-assurance-network identity-plan
 make -C projects/0ai-assurance-network signer-manifest
+make -C projects/0ai-assurance-network signer-rotation-receipt OUTGOING_SIGNER_ID=governance-chair-bot INCOMING_SIGNER_ID=governance-chair-bot-v2 INCOMING_KEY_ID=governance-chair-dev-v2 EFFECTIVE_AT=2026-04-24T00:00:00Z
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -180,6 +181,14 @@ rotation metadata is stale, if two active signers claim the same actor
 ownership, or if a governance execution role has no active signer coverage. The
 rotation contract is described in [docs/signer-manifests.md](docs/signer-manifests.md).
 
+`signer-rotation-receipt` renders a machine-readable rotation receipt stub for
+one outgoing signer plus a replacement-ready signer manifest preview. The stub
+records the outgoing signer, the incoming signer/key, approval actors, the
+effective cutover time, and the manifest path the operator should publish with
+the receipt. Rotation receipts fail closed when the replacement would leave a
+required governance role uncovered, reuse another active actor owner, or use an
+invalid effective-at ordering.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -192,6 +201,7 @@ currently supports:
 - `module-plan`
 - `identity-plan`
 - `signer-manifest`
+- `signer-rotation-receipt`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
@@ -208,6 +218,12 @@ Bootstrap examples:
 ./0aid module-plan --root . --out ./build/module-plan.json
 ./0aid identity-plan --root . --out ./build/identity-plan.json
 ./0aid signer-manifest --root . --out ./build/signer-manifest.json
+./0aid signer-rotation-receipt --root . \
+  --outgoing-signer-id governance-chair-bot \
+  --incoming-signer-id governance-chair-bot-v2 \
+  --incoming-key-id governance-chair-dev-v2 \
+  --effective-at 2026-04-24T00:00:00Z \
+  --out ./build/rotation/governance-chair-receipt.json
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
 ./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
 ./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json

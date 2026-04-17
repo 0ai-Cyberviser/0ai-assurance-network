@@ -42,6 +42,9 @@ func TestLoadBundle(t *testing.T) {
 	if rotationPolicy["reference_time"] != "2026-04-17T00:00:00Z" {
 		t.Fatalf("unexpected signer rotation reference time: %v", rotationPolicy["reference_time"])
 	}
+	if len(rotationPolicy["approval_roles"].([]any)) != 3 {
+		t.Fatalf("expected 3 signer rotation approval roles, got %d", len(rotationPolicy["approval_roles"].([]any)))
+	}
 	if len(bundle.InferencePolicy) == 0 {
 		t.Fatal("expected inference policy to be loaded")
 	}

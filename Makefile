@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -24,6 +24,7 @@ help:
 	@echo "  module-plan      Render the first registry/attestation milestone plan"
 	@echo "  identity-plan    Render the permissioned actor and role bootstrap plan"
 	@echo "  signer-manifest  Render checkpoint signer ownership and rotation plan"
+	@echo "  signer-rotation-receipt Render a replacement-ready signer manifest and rotation receipt stub"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -81,6 +82,13 @@ identity-plan:
 
 signer-manifest:
 	./0aid signer-manifest --root . $(if $(OUT),--out $(OUT),)
+
+signer-rotation-receipt:
+	@test -n "$(OUTGOING_SIGNER_ID)" || (echo "Usage: make signer-rotation-receipt OUTGOING_SIGNER_ID=governance-chair-bot INCOMING_SIGNER_ID=governance-chair-bot-v2 INCOMING_KEY_ID=governance-chair-dev-v2 EFFECTIVE_AT=2026-04-24T00:00:00Z" && exit 1)
+	@test -n "$(INCOMING_SIGNER_ID)" || (echo "Usage: make signer-rotation-receipt OUTGOING_SIGNER_ID=governance-chair-bot INCOMING_SIGNER_ID=governance-chair-bot-v2 INCOMING_KEY_ID=governance-chair-dev-v2 EFFECTIVE_AT=2026-04-24T00:00:00Z" && exit 1)
+	@test -n "$(INCOMING_KEY_ID)" || (echo "Usage: make signer-rotation-receipt OUTGOING_SIGNER_ID=governance-chair-bot INCOMING_SIGNER_ID=governance-chair-bot-v2 INCOMING_KEY_ID=governance-chair-dev-v2 EFFECTIVE_AT=2026-04-24T00:00:00Z" && exit 1)
+	@test -n "$(EFFECTIVE_AT)" || (echo "Usage: make signer-rotation-receipt OUTGOING_SIGNER_ID=governance-chair-bot INCOMING_SIGNER_ID=governance-chair-bot-v2 INCOMING_KEY_ID=governance-chair-dev-v2 EFFECTIVE_AT=2026-04-24T00:00:00Z" && exit 1)
+	./0aid signer-rotation-receipt --root . --outgoing-signer-id $(OUTGOING_SIGNER_ID) --incoming-signer-id $(INCOMING_SIGNER_ID) --incoming-key-id $(INCOMING_KEY_ID) --effective-at $(EFFECTIVE_AT) $(if $(INCOMING_ACTOR_ID),--incoming-actor-id $(INCOMING_ACTOR_ID),) $(if $(INCOMING_ROLES),--incoming-roles $(INCOMING_ROLES),) $(if $(INCOMING_PROVISIONED_AT),--incoming-provisioned-at $(INCOMING_PROVISIONED_AT),) $(if $(INCOMING_ROTATE_BY),--incoming-rotate-by $(INCOMING_ROTATE_BY),) $(if $(RECEIPT_ID),--receipt-id $(RECEIPT_ID),) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)

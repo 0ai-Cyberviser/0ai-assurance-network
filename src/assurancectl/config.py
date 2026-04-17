@@ -174,6 +174,11 @@ def validate_checkpoint_signers(checkpoint_signers: dict[str, Any], inference_po
         warning_window_days > 0,
         "checkpoint signer rotation_policy.warning_window_days must be positive",
     )
+    approval_roles = [str(role) for role in rotation_policy.get("approval_roles", [])]
+    _assert(
+        approval_roles,
+        "checkpoint signer rotation_policy.approval_roles must not be empty",
+    )
     signers = list(checkpoint_signers["signers"])
     _assert(signers, "at least one checkpoint signer must be configured")
 
@@ -236,6 +241,11 @@ def validate_checkpoint_signers(checkpoint_signers: dict[str, Any], inference_po
     _assert(
         not missing_roles,
         f"checkpoint signer coverage missing roles: {', '.join(missing_roles)}",
+    )
+    missing_approval_roles = sorted(set(approval_roles) - set(active_role_coverage))
+    _assert(
+        not missing_approval_roles,
+        f"checkpoint signer approval roles missing active coverage: {', '.join(missing_approval_roles)}",
     )
 
 

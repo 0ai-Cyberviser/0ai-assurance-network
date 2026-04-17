@@ -34,6 +34,9 @@ func TestSignerManifest(t *testing.T) {
 	if manifest.ChainID != "0ai-assurance-1" {
 		t.Fatalf("unexpected chain id: %s", manifest.ChainID)
 	}
+	if manifest.Version != "1.1.0" {
+		t.Fatalf("unexpected manifest version: %s", manifest.Version)
+	}
 	if manifest.SignerCount != 14 {
 		t.Fatalf("expected 14 signers, got %d", manifest.SignerCount)
 	}
@@ -61,6 +64,9 @@ func TestSignerManifest(t *testing.T) {
 		}
 		if signer.RotationStatus != "expiring" {
 			t.Fatalf("expected governance chair signer to be expiring, got %s", signer.RotationStatus)
+		}
+		if signer.NextRotationReceiptID == "" || signer.ReplacementManifestRef == "" {
+			t.Fatalf("expected governance chair signer to include receipt metadata: %+v", signer)
 		}
 		if len(signer.RoleCoverage) != 1 || len(signer.RoleCoverage[0].ReferencedBy) != 1 {
 			t.Fatalf("unexpected governance chair role coverage: %+v", signer.RoleCoverage)
@@ -131,5 +137,111 @@ func TestSignerManifestFailsOnStaleRotationMetadata(t *testing.T) {
 	_, err = SignerManifest(bundle)
 	if err == nil || !strings.Contains(err.Error(), "stale rotation metadata") {
 		t.Fatalf("expected stale rotation error, got %v", err)
+	}
+}
+
+func TestSignerRotationReceipt(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	receipt, err := SignerRotationReceipt(bundle, SignerRotationReceiptRequest{
+		OutgoingSignerID: "governance-chair-bot",
+		IncomingSignerID: "governance-chair-bot-v2",
+		IncomingKeyID:    "governance-chair-dev-v2",
+		EffectiveAt:      "2026-04-24T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationReceipt failed: %v", err)
+	}
+
+	if receipt.CoverageStatus != "ready" {
+		t.Fatalf("unexpected coverage status: %s", receipt.CoverageStatus)
+	}
+	if receipt.ReceiptID == "" || receipt.ReplacementManifestRef == "" {
+		t.Fatalf("expected receipt metadata, got %+v", receipt)
+	}
+	if receipt.OutgoingSigner.SignerID != "governance-chair-bot" {
+		t.Fatalf("unexpected outgoing signer: %+v", receipt.OutgoingSigner)
+	}
+	if receipt.IncomingSigner.SignerID != "governance-chair-bot-v2" {
+		t.Fatalf("unexpected incoming signer: %+v", receipt.IncomingSigner)
+	}
+	if len(receipt.ApprovalRequirements) != 3 {
+		t.Fatalf("expected 3 approval requirements, got %d", len(receipt.ApprovalRequirements))
+	}
+	if receipt.ReplacementSignerManifest.SignerCount != 14 {
+		t.Fatalf("expected replacement manifest with 14 signers, got %d", receipt.ReplacementSignerManifest.SignerCount)
+	}
+}
+
+func TestSignerRotationReceiptFailsOnReplacementCoverageGap(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	bundle.Identity.RoleBindings = append(bundle.Identity.RoleBindings, IdentityRoleBinding{
+		ActorID:   "op-governance-chair-1",
+		Role:      "network_admin",
+		Scope:     "network",
+		GrantedBy: "genesis",
+		Status:    "active",
+	})
+
+	_, err = SignerRotationReceipt(bundle, SignerRotationReceiptRequest{
+		OutgoingSignerID: "governance-chair-bot",
+		IncomingSignerID: "governance-chair-bot-v2",
+		IncomingKeyID:    "governance-chair-dev-v2",
+		IncomingRoles:    []string{"network_admin"},
+		EffectiveAt:      "2026-04-24T00:00:00Z",
+	})
+	if err == nil || !strings.Contains(err.Error(), "checkpoint signer coverage missing roles: governance-chair") {
+		t.Fatalf("expected coverage gap error, got %v", err)
+	}
+}
+
+func TestSignerRotationReceiptFailsOnDuplicateReplacementOwnership(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	bundle.Identity.RoleBindings = append(bundle.Identity.RoleBindings, IdentityRoleBinding{
+		ActorID:   "op-governance-ops-1",
+		Role:      "governance-chair",
+		Scope:     "governance",
+		GrantedBy: "genesis",
+		Status:    "active",
+	})
+
+	_, err = SignerRotationReceipt(bundle, SignerRotationReceiptRequest{
+		OutgoingSignerID: "governance-chair-bot",
+		IncomingSignerID: "governance-chair-bot-v2",
+		IncomingKeyID:    "governance-chair-dev-v2",
+		IncomingActorID:  "op-governance-ops-1",
+		IncomingRoles:    []string{"governance-chair"},
+		EffectiveAt:      "2026-04-24T00:00:00Z",
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate checkpoint signer actor ownership") {
+		t.Fatalf("expected duplicate replacement ownership error, got %v", err)
+	}
+}
+
+func TestSignerRotationReceiptFailsOnInvalidEffectiveAtOrdering(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	_, err = SignerRotationReceipt(bundle, SignerRotationReceiptRequest{
+		OutgoingSignerID: "governance-chair-bot",
+		IncomingSignerID: "governance-chair-bot-v2",
+		IncomingKeyID:    "governance-chair-dev-v2",
+		EffectiveAt:      "2026-05-10T00:00:00Z",
+	})
+	if err == nil || !strings.Contains(err.Error(), "effective_at must be on or before the outgoing signer rotate_by time") {
+		t.Fatalf("expected effective_at ordering error, got %v", err)
 	}
 }

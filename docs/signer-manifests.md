@@ -53,6 +53,8 @@ The manifest contains:
 - per-role governance references such as `governance:phase_owner:*`
 - rotation status (`current`, `expiring`, `inactive`)
 - `rotation_plan`, sorted by earliest `rotate_by`
+- deterministic `next_rotation_receipt_id` values
+- deterministic `replacement_manifest_ref` paths
 
 Example:
 
@@ -63,3 +65,47 @@ Example:
 This command should be treated as a release-gating check for governance
 bootstrap changes. If it fails, the signer policy is no longer operationally
 sound enough to exercise checkpoint replay or remediation signing.
+
+## Rotation receipts
+
+`0aid signer-rotation-receipt` creates a machine-readable receipt stub for a
+planned signer replacement.
+
+The receipt includes:
+
+- outgoing signer metadata
+- incoming signer metadata
+- approval actor requirements, resolved from `rotation_policy.approval_roles`
+- `effective_at`
+- a deterministic `replacement_manifest_ref`
+- a full replacement-ready signer manifest preview
+
+Example:
+
+```bash
+./0aid signer-rotation-receipt --root . \
+  --outgoing-signer-id governance-chair-bot \
+  --incoming-signer-id governance-chair-bot-v2 \
+  --incoming-key-id governance-chair-dev-v2 \
+  --effective-at 2026-04-24T00:00:00Z \
+  --out ./build/rotation/governance-chair-receipt.json
+```
+
+The replacement preview only renders when:
+
+- the incoming actor is active
+- the incoming actor is actively bound to every replacement role
+- the replacement does not reuse another active signer owner
+- the replacement preserves all required governance execution role coverage
+- `effective_at` is after the current reference time and on or before the
+  outgoing signer `rotate_by`
+
+## Operator workflow
+
+1. Render the current signer manifest and identify any `expiring` signers.
+2. Generate a signer rotation receipt stub for the outgoing signer.
+3. Review the approval actor set and replacement manifest preview.
+4. Collect governance approval against the receipt stub.
+5. Publish the approved receipt together with the replacement signer manifest.
+6. Update `config/governance/checkpoint-signers.json` only after the approved
+   replacement manifest is ready to become the new active state.

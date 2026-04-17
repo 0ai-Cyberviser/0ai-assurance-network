@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/0ai-Cyberviser/0ai-assurance-network/internal/project"
 )
@@ -85,6 +86,64 @@ func run(args []string) error {
 			return printJSON(manifest)
 		}
 		return project.WriteJSON(filepath.Clean(*out), manifest)
+	case "signer-rotation-receipt":
+		fs := flag.NewFlagSet("signer-rotation-receipt", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		outgoingSignerID := fs.String("outgoing-signer-id", "", "outgoing signer id")
+		incomingSignerID := fs.String("incoming-signer-id", "", "incoming signer id")
+		incomingKeyID := fs.String("incoming-key-id", "", "incoming key id")
+		incomingActorID := fs.String("incoming-actor-id", "", "incoming actor id (defaults to outgoing actor)")
+		incomingRoles := fs.String("incoming-roles", "", "comma-separated incoming roles (defaults to outgoing roles)")
+		incomingProvisionedAt := fs.String("incoming-provisioned-at", "", "incoming signer provisioned_at timestamp")
+		incomingRotateBy := fs.String("incoming-rotate-by", "", "incoming signer rotate_by timestamp")
+		effectiveAt := fs.String("effective-at", "", "rotation effective_at timestamp")
+		receiptID := fs.String("receipt-id", "", "explicit receipt id")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *outgoingSignerID == "" {
+			return errors.New("signer-rotation-receipt requires --outgoing-signer-id")
+		}
+		if *incomingSignerID == "" {
+			return errors.New("signer-rotation-receipt requires --incoming-signer-id")
+		}
+		if *incomingKeyID == "" {
+			return errors.New("signer-rotation-receipt requires --incoming-key-id")
+		}
+		if *effectiveAt == "" {
+			return errors.New("signer-rotation-receipt requires --effective-at")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		request := project.SignerRotationReceiptRequest{
+			OutgoingSignerID:      *outgoingSignerID,
+			IncomingSignerID:      *incomingSignerID,
+			IncomingKeyID:         *incomingKeyID,
+			IncomingActorID:       *incomingActorID,
+			IncomingProvisionedAt: *incomingProvisionedAt,
+			IncomingRotateBy:      *incomingRotateBy,
+			EffectiveAt:           *effectiveAt,
+			ReceiptID:             *receiptID,
+		}
+		if strings.TrimSpace(*incomingRoles) != "" {
+			for _, role := range strings.Split(*incomingRoles, ",") {
+				role = strings.TrimSpace(role)
+				if role != "" {
+					request.IncomingRoles = append(request.IncomingRoles, role)
+				}
+			}
+		}
+		receipt, err := project.SignerRotationReceipt(bundle, request)
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(receipt)
+		}
+		return project.WriteJSON(filepath.Clean(*out), receipt)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -253,7 +312,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
