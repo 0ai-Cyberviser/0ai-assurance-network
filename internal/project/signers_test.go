@@ -852,3 +852,101 @@ func TestSignerRotationActivationAuditReconcileFlagsCurrentPolicyMismatch(t *tes
 		t.Fatalf("expected reconciliation issues for current policy mismatch")
 	}
 }
+
+func mustSignerRotationActivationAuditReconcileReport(
+	t *testing.T,
+	ledger SignerRotationActivationAuditLedger,
+	policy CheckpointSignerPolicyOutput,
+) SignerRotationActivationAuditReconcileReport {
+	t.Helper()
+
+	report, err := SignerRotationActivationAuditReconcile(SignerRotationActivationAuditReconcileRequest{
+		Ledger:     ledger,
+		Policy:     policy,
+		PolicyPath: "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditReconcile failed: %v", err)
+	}
+	return report
+}
+
+func TestSignerRotationActivationAuditExport(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applied := mustSignerRotationApplyResult(t, bundle)
+	ledger := mustSignerRotationActivationAuditLedger(t, bundle)
+	report := mustSignerRotationActivationAuditReconcileReport(t, ledger, applied.AppliedPolicy)
+	exportPackage, err := SignerRotationActivationAuditExport(SignerRotationActivationAuditExportRequest{
+		Ledger:         ledger,
+		Policy:         applied.AppliedPolicy,
+		Reconciliation: report,
+		PolicyPath:     "config/governance/checkpoint-signers.json",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditExport failed: %v", err)
+	}
+	if exportPackage.Status != "consistent" {
+		t.Fatalf("unexpected export status: %s", exportPackage.Status)
+	}
+	if exportPackage.BaselineSnapshot.CurrentPolicyVersion != applied.AppliedPolicy.Version {
+		t.Fatalf("unexpected baseline current policy version: %s", exportPackage.BaselineSnapshot.CurrentPolicyVersion)
+	}
+	if exportPackage.BaselineSnapshot.LedgerEntryCount != 1 {
+		t.Fatalf("unexpected baseline ledger entry count: %d", exportPackage.BaselineSnapshot.LedgerEntryCount)
+	}
+	if exportPackage.BaselineSnapshot.LatestEntry == nil {
+		t.Fatal("expected latest baseline entry")
+	}
+	if exportPackage.BaselineSnapshot.LatestEntry.ReceiptID != report.LatestReceiptID {
+		t.Fatalf("unexpected latest baseline receipt id: %s", exportPackage.BaselineSnapshot.LatestEntry.ReceiptID)
+	}
+	if len(exportPackage.BaselineSnapshot.ContinuityIssues) != 0 {
+		t.Fatalf("expected no continuity issues, got %+v", exportPackage.BaselineSnapshot.ContinuityIssues)
+	}
+}
+
+func TestSignerRotationActivationAuditExportFailsOnReconciliationDigestMismatch(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applied := mustSignerRotationApplyResult(t, bundle)
+	ledger := mustSignerRotationActivationAuditLedger(t, bundle)
+	report := mustSignerRotationActivationAuditReconcileReport(t, ledger, applied.AppliedPolicy)
+	report.CurrentPolicyDigest = "deadbeef"
+	_, err = SignerRotationActivationAuditExport(SignerRotationActivationAuditExportRequest{
+		Ledger:         ledger,
+		Policy:         applied.AppliedPolicy,
+		Reconciliation: report,
+		PolicyPath:     "config/governance/checkpoint-signers.json",
+	})
+	if err == nil || !strings.Contains(err.Error(), "activation audit reconciliation current_policy_digest mismatch") {
+		t.Fatalf("expected reconciliation digest mismatch error, got %v", err)
+	}
+}
+
+func TestSignerRotationActivationAuditExportFailsOnLatestReceiptMismatch(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	applied := mustSignerRotationApplyResult(t, bundle)
+	ledger := mustSignerRotationActivationAuditLedger(t, bundle)
+	report := mustSignerRotationActivationAuditReconcileReport(t, ledger, applied.AppliedPolicy)
+	report.LatestReceiptID = "rotation-other-20260424t000000z"
+	_, err = SignerRotationActivationAuditExport(SignerRotationActivationAuditExportRequest{
+		Ledger:         ledger,
+		Policy:         applied.AppliedPolicy,
+		Reconciliation: report,
+		PolicyPath:     "config/governance/checkpoint-signers.json",
+	})
+	if err == nil || !strings.Contains(err.Error(), "activation audit reconciliation latest_receipt_id mismatch") {
+		t.Fatalf("expected latest receipt mismatch error, got %v", err)
+	}
+}

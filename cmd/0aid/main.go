@@ -13,6 +13,7 @@ import (
 )
 
 const version = "0.1.0-dev"
+const checkpointSignerPolicyPath = "config/governance/checkpoint-signers.json"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -414,16 +415,9 @@ func run(args []string) error {
 		if resolvedPolicyPath == "" {
 			resolvedPolicyPath = filepath.Join(*root, "config/governance/checkpoint-signers.json")
 		}
-		ledger := project.SignerRotationActivationAuditLedger{}
-		ledgerContents, err := os.ReadFile(filepath.Clean(resolvedLedgerPath))
+		ledger, err := readActivationAuditLedger(resolvedLedgerPath)
 		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		} else if len(ledgerContents) > 0 {
-			if err := json.Unmarshal(ledgerContents, &ledger); err != nil {
-				return fmt.Errorf("parse %s: %w", resolvedLedgerPath, err)
-			}
+			return err
 		}
 		var policy project.CheckpointSignerPolicyOutput
 		if err := readJSONFile(filepath.Clean(resolvedPolicyPath), &policy); err != nil {
@@ -432,7 +426,7 @@ func run(args []string) error {
 		report, err := project.SignerRotationActivationAuditReconcile(project.SignerRotationActivationAuditReconcileRequest{
 			Ledger:     ledger,
 			Policy:     policy,
-			PolicyPath: "config/governance/checkpoint-signers.json",
+			PolicyPath: checkpointSignerPolicyPath,
 		})
 		if err != nil {
 			return err
@@ -441,6 +435,60 @@ func run(args []string) error {
 			return printJSON(report)
 		}
 		return project.WriteJSON(filepath.Clean(*out), report)
+	case "signer-rotation-ledger-export":
+		fs := flag.NewFlagSet("signer-rotation-ledger-export", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		ledgerPath := fs.String("ledger", "", "activation audit ledger path")
+		policyPath := fs.String("policy", "", "checkpoint signer policy path")
+		reconcilePath := fs.String("reconcile", "", "existing reconciliation report path")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		resolvedLedgerPath := strings.TrimSpace(*ledgerPath)
+		if resolvedLedgerPath == "" {
+			resolvedLedgerPath = filepath.Join(*root, "build/rotation/activation-audit-ledger.json")
+		}
+		resolvedPolicyPath := strings.TrimSpace(*policyPath)
+		if resolvedPolicyPath == "" {
+			resolvedPolicyPath = filepath.Join(*root, "config/governance/checkpoint-signers.json")
+		}
+		ledger, err := readActivationAuditLedger(resolvedLedgerPath)
+		if err != nil {
+			return err
+		}
+		var policy project.CheckpointSignerPolicyOutput
+		if err := readJSONFile(filepath.Clean(resolvedPolicyPath), &policy); err != nil {
+			return err
+		}
+		var report project.SignerRotationActivationAuditReconcileReport
+		if strings.TrimSpace(*reconcilePath) != "" {
+			if err := readJSONFile(filepath.Clean(*reconcilePath), &report); err != nil {
+				return err
+			}
+		} else {
+			report, err = project.SignerRotationActivationAuditReconcile(project.SignerRotationActivationAuditReconcileRequest{
+				Ledger:     ledger,
+				Policy:     policy,
+				PolicyPath: checkpointSignerPolicyPath,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		exportPackage, err := project.SignerRotationActivationAuditExport(project.SignerRotationActivationAuditExportRequest{
+			Ledger:         ledger,
+			Policy:         policy,
+			Reconciliation: report,
+			PolicyPath:     checkpointSignerPolicyPath,
+		})
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(exportPackage)
+		}
+		return project.WriteJSON(filepath.Clean(*out), exportPackage)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -609,7 +657,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 
@@ -622,6 +670,24 @@ func readJSONFile(path string, destination any) error {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	return nil
+}
+
+func readActivationAuditLedger(path string) (project.SignerRotationActivationAuditLedger, error) {
+	ledger := project.SignerRotationActivationAuditLedger{}
+	contents, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ledger, nil
+		}
+		return ledger, err
+	}
+	if len(contents) == 0 {
+		return ledger, nil
+	}
+	if err := json.Unmarshal(contents, &ledger); err != nil {
+		return ledger, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return ledger, nil
 }
 
 func readSignerRotationApprovals(path string) ([]project.SignerRotationApproval, error) {

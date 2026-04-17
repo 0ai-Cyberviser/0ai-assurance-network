@@ -84,6 +84,7 @@ make -C projects/0ai-assurance-network signer-rotation-apply PLAN=build/rotation
 make -C projects/0ai-assurance-network signer-rotation-verify PLAN=build/rotation/governance-chair-activation-plan.json POLICY=build/rotation/governance-chair-applied-policy.json VERIFIED_AT=2026-04-24T00:15:00Z
 make -C projects/0ai-assurance-network signer-rotation-ledger-append APPLY=build/rotation/governance-chair-apply-result.json VERIFICATION=build/rotation/governance-chair-verification.json LEDGER_OUT=build/rotation/activation-audit-ledger.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-reconcile LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-export LEDGER=build/rotation/activation-audit-ledger.json POLICY=build/rotation/governance-chair-applied-policy.json OUT=build/rotation/governance-chair-audit-export.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -237,6 +238,18 @@ explained by the latest recorded activation. It surfaces missing ledger
 coverage, duplicate continuity records, and any current policy version or
 digest that no longer matches the recorded ledger lineage.
 
+`signer-rotation-ledger-export` packages that same ledger lineage into a stable
+offline review artifact. The export bundles:
+
+- the current checkpoint signer policy and digest
+- the append-only activation audit ledger
+- the reconciliation report
+- a baseline snapshot covering the latest ledger lineage and current continuity state
+
+Exports fail closed when the reconciliation report contradicts the ledger or
+current policy digests, so operators cannot archive a self-inconsistent bundle
+as if it were a valid baseline.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -257,6 +270,7 @@ currently supports:
 - `signer-rotation-verify`
 - `signer-rotation-ledger-append`
 - `signer-rotation-ledger-reconcile`
+- `signer-rotation-ledger-export`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
