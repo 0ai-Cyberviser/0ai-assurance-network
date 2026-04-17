@@ -418,6 +418,65 @@ Promotion fails closed when:
 - the requested package path does not exist in the archive index
 - the archive index entry drifts on policy version, digest, receipt lineage, or entry count
 
+## Promotion verification receipts
+
+`0aid signer-rotation-ledger-verify-promotion` independently verifies a
+promoted retained baseline and emits a stable verification receipt.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-verify-promotion \
+  --export ./build/rotation/governance-chair-audit-export.json \
+  --verify ./build/rotation/governance-chair-audit-export-verify.json \
+  --index ./build/rotation/activation-audit-archive-index.json \
+  --promotion ./build/rotation/governance-chair-archive-promotion.json \
+  --verified-at 2026-04-24T00:25:00Z \
+  --verified-by governance-audit-bot \
+  --out ./build/rotation/governance-chair-archive-verification.json
+```
+
+The verification receipt includes:
+
+- the promoted receipt and retained attestation identifiers
+- digests for the full promotion result, promotion receipt, and attestation
+- the current policy version/digest and latest receipt lineage
+- a deterministic verification receipt id bound to the promotion lineage
+
+Verification fails closed when:
+
+- the supplied promotion result drifts from a recomputed promotion
+- the promotion result is not `promoted`
+- the retained attestation no longer matches the promotion receipt lineage
+
+## Retained archive inventory snapshots
+
+`0aid signer-rotation-ledger-retained-inventory` builds a stable snapshot over
+verified promoted baselines.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-retained-inventory \
+  --promotions ./build/rotation/governance-chair-archive-promotion.json \
+  --verification-receipts ./build/rotation/governance-chair-archive-verification.json \
+  --out ./build/rotation/retained-archive-inventory.json
+```
+
+The retained inventory snapshot includes:
+
+- promotion and verification receipt ids for each retained baseline
+- current policy version/digest and latest receipt lineage
+- promotion and verification digests for each retained entry
+- a stable latest retained baseline summary across the verified set
+
+Inventory generation fails closed when:
+
+- verification receipts are not `verified`
+- verification receipts drift from promoted receipt or attestation metadata
+- retained entries collide on policy version, promotion receipt id, attestation id, or verification receipt id
+- retained entries disagree on chain or policy path metadata
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -444,3 +503,6 @@ Promotion fails closed when:
 15. Rebuild the archive index manifest whenever a new retained baseline is added.
 16. Promote the retained baseline only after the verified export and archive
     index entry produce a matching promotion receipt and attestation pair.
+17. Verify the promoted retained baseline and retain the verification receipt.
+18. Rebuild the retained inventory snapshot whenever a new promoted baseline is
+    independently verified.

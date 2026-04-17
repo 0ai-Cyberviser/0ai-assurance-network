@@ -503,6 +503,84 @@ type SignerRotationActivationAuditArchivePromotionResult struct {
 	Issues                      []string                                                 `json:"issues"`
 }
 
+type SignerRotationActivationAuditArchivePromotionVerificationRequest struct {
+	PackagePath        string
+	ExportPackage      SignerRotationActivationAuditExportPackage
+	VerificationReport SignerRotationActivationAuditExportVerificationReport
+	ArchiveIndex       SignerRotationActivationAuditArchiveIndex
+	PromotionResult    SignerRotationActivationAuditArchivePromotionResult
+	VerifiedAt         string
+	VerifiedBy         string
+}
+
+type SignerRotationActivationAuditArchivePromotionVerificationReceipt struct {
+	Version                string   `json:"version"`
+	Status                 string   `json:"status"`
+	VerificationReceiptID  string   `json:"verification_receipt_id"`
+	PackagePath            string   `json:"package_path"`
+	VerifiedAt             string   `json:"verified_at"`
+	VerifiedBy             string   `json:"verified_by"`
+	PromotionReceiptID     string   `json:"promotion_receipt_id"`
+	AttestationID          string   `json:"attestation_id"`
+	ChainID                string   `json:"chain_id"`
+	PolicyPath             string   `json:"policy_path"`
+	CurrentPolicyVersion   string   `json:"current_policy_version"`
+	CurrentPolicyDigest    string   `json:"current_policy_digest"`
+	LatestReceiptID        string   `json:"latest_receipt_id,omitempty"`
+	LatestTargetVersion    string   `json:"latest_target_policy_version,omitempty"`
+	PromotionResultDigest  string   `json:"promotion_result_digest"`
+	PromotionReceiptDigest string   `json:"promotion_receipt_digest"`
+	AttestationDigest      string   `json:"attestation_digest"`
+	ArchiveIndexDigest     string   `json:"archive_index_digest"`
+	ArchiveEntryDigest     string   `json:"archive_entry_digest"`
+	VerificationIssues     []string `json:"verification_issues"`
+}
+
+type SignerRotationActivationAuditRetainedInventoryPackage struct {
+	PromotionPath       string
+	PromotionResult     SignerRotationActivationAuditArchivePromotionResult
+	VerificationReceipt SignerRotationActivationAuditArchivePromotionVerificationReceipt
+}
+
+type SignerRotationActivationAuditRetainedInventorySnapshotRequest struct {
+	Packages []SignerRotationActivationAuditRetainedInventoryPackage
+}
+
+type SignerRotationActivationAuditRetainedInventorySnapshotEntry struct {
+	PromotionPath             string   `json:"promotion_path"`
+	Status                    string   `json:"status"`
+	Verified                  bool     `json:"verified"`
+	VerificationReceiptID     string   `json:"verification_receipt_id"`
+	PromotionReceiptID        string   `json:"promotion_receipt_id"`
+	AttestationID             string   `json:"attestation_id"`
+	ChainID                   string   `json:"chain_id"`
+	PolicyPath                string   `json:"policy_path"`
+	CurrentPolicyVersion      string   `json:"current_policy_version"`
+	CurrentPolicyDigest       string   `json:"current_policy_digest"`
+	LatestReceiptID           string   `json:"latest_receipt_id,omitempty"`
+	LatestTargetVersion       string   `json:"latest_target_policy_version,omitempty"`
+	PromotedAt                string   `json:"promoted_at"`
+	PromotedBy                string   `json:"promoted_by"`
+	VerifiedAt                string   `json:"verified_at"`
+	VerifiedBy                string   `json:"verified_by"`
+	PromotionResultDigest     string   `json:"promotion_result_digest"`
+	VerificationReceiptDigest string   `json:"verification_receipt_digest"`
+	VerificationIssues        []string `json:"verification_issues,omitempty"`
+}
+
+type SignerRotationActivationAuditRetainedInventorySnapshot struct {
+	Version                    string                                                        `json:"version"`
+	Status                     string                                                        `json:"status"`
+	PackageCount               int                                                           `json:"package_count"`
+	VerifiedCount              int                                                           `json:"verified_count"`
+	ChainID                    string                                                        `json:"chain_id"`
+	PolicyPath                 string                                                        `json:"policy_path"`
+	LatestCurrentPolicyVersion string                                                        `json:"latest_current_policy_version,omitempty"`
+	LatestCurrentPolicyDigest  string                                                        `json:"latest_current_policy_digest,omitempty"`
+	Entries                    []SignerRotationActivationAuditRetainedInventorySnapshotEntry `json:"entries"`
+	Issues                     []string                                                      `json:"issues"`
+}
+
 type parsedSignerEntry struct {
 	ActorID           string
 	SignerID          string
@@ -2914,6 +2992,285 @@ func BuildSignerRotationActivationAuditArchivePromotion(
 	}
 	result.Status = "promoted"
 	return result, nil
+}
+
+func VerifySignerRotationActivationAuditArchivePromotion(
+	request SignerRotationActivationAuditArchivePromotionVerificationRequest,
+) (SignerRotationActivationAuditArchivePromotionVerificationReceipt, error) {
+	packagePath := strings.TrimSpace(request.PackagePath)
+	if packagePath == "" {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, fmt.Errorf("activation audit archive promotion verification package_path must be set")
+	}
+	verifiedAt, err := parseRFC3339(request.VerifiedAt, "activation audit archive promotion verification verified_at")
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, err
+	}
+	verifiedBy := strings.TrimSpace(request.VerifiedBy)
+	if verifiedBy == "" {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, fmt.Errorf("activation audit archive promotion verification verified_by must be set")
+	}
+
+	receipt := SignerRotationActivationAuditArchivePromotionVerificationReceipt{
+		Version:            "1.0.0",
+		Status:             "invalid",
+		PackagePath:        packagePath,
+		VerifiedAt:         verifiedAt.Format(time.RFC3339),
+		VerifiedBy:         verifiedBy,
+		VerificationIssues: []string{},
+	}
+
+	expectedPromotion, err := BuildSignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionRequest{
+		PackagePath:        packagePath,
+		ExportPackage:      request.ExportPackage,
+		VerificationReport: request.VerificationReport,
+		ArchiveIndex:       request.ArchiveIndex,
+		PromotedAt:         request.PromotionResult.PromotionReceipt.PromotedAt,
+		PromotedBy:         request.PromotionResult.PromotionReceipt.PromotedBy,
+	})
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, err
+	}
+	expectedJSON, err := json.Marshal(expectedPromotion)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, fmt.Errorf("marshal expected activation audit archive promotion: %w", err)
+	}
+	actualJSON, err := json.Marshal(request.PromotionResult)
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, fmt.Errorf("marshal actual activation audit archive promotion: %w", err)
+	}
+	if !bytesEqual(expectedJSON, actualJSON) {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "activation audit archive promotion drift detected")
+	}
+	if expectedPromotion.Status != "promoted" {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "activation audit archive promotion is not promoted")
+	}
+
+	promotionResultDigest, err := digestJSON(request.PromotionResult, "activation audit archive promotion result")
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, err
+	}
+	promotionReceiptDigest, err := digestJSON(request.PromotionResult.PromotionReceipt, "activation audit archive promotion receipt")
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, err
+	}
+	attestationDigest, err := digestJSON(request.PromotionResult.RetainedBaselineAttestation, "activation audit retained baseline attestation")
+	if err != nil {
+		return SignerRotationActivationAuditArchivePromotionVerificationReceipt{}, err
+	}
+
+	receipt.PromotionReceiptID = request.PromotionResult.PromotionReceipt.ReceiptID
+	receipt.AttestationID = request.PromotionResult.RetainedBaselineAttestation.AttestationID
+	receipt.ChainID = request.PromotionResult.PromotionReceipt.ChainID
+	receipt.PolicyPath = request.PromotionResult.PromotionReceipt.PolicyPath
+	receipt.CurrentPolicyVersion = request.PromotionResult.PromotionReceipt.CurrentPolicyVersion
+	receipt.CurrentPolicyDigest = request.PromotionResult.PromotionReceipt.CurrentPolicyDigest
+	receipt.LatestReceiptID = request.PromotionResult.PromotionReceipt.LatestReceiptID
+	receipt.LatestTargetVersion = request.PromotionResult.PromotionReceipt.LatestTargetVersion
+	receipt.PromotionResultDigest = promotionResultDigest
+	receipt.PromotionReceiptDigest = promotionReceiptDigest
+	receipt.AttestationDigest = attestationDigest
+	receipt.ArchiveIndexDigest = request.PromotionResult.PromotionReceipt.ArchiveIndexDigest
+	receipt.ArchiveEntryDigest = request.PromotionResult.PromotionReceipt.ArchiveEntryDigest
+
+	if request.PromotionResult.PromotionReceipt.Status != "promoted" {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "promotion receipt status must be promoted")
+	}
+	if request.PromotionResult.RetainedBaselineAttestation.Status != "retained" {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "retained baseline attestation status must be retained")
+	}
+	if request.PromotionResult.RetainedBaselineAttestation.PromotionReceiptID != request.PromotionResult.PromotionReceipt.ReceiptID {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "retained baseline attestation promotion_receipt_id mismatch")
+	}
+	if request.PromotionResult.RetainedBaselineAttestation.ArchiveIndexDigest != request.PromotionResult.PromotionReceipt.ArchiveIndexDigest {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "retained baseline attestation archive_index_digest mismatch")
+	}
+	if request.PromotionResult.RetainedBaselineAttestation.ArchiveEntryDigest != request.PromotionResult.PromotionReceipt.ArchiveEntryDigest {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "retained baseline attestation archive_entry_digest mismatch")
+	}
+	if request.PromotionResult.RetainedBaselineAttestation.ExportPackageDigest != request.PromotionResult.PromotionReceipt.ExportPackageDigest {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "retained baseline attestation export_package_digest mismatch")
+	}
+	if request.PromotionResult.RetainedBaselineAttestation.VerificationDigest != request.PromotionResult.PromotionReceipt.VerificationDigest {
+		receipt.VerificationIssues = append(receipt.VerificationIssues, "retained baseline attestation verification_digest mismatch")
+	}
+
+	if len(receipt.VerificationIssues) > 0 {
+		return receipt, nil
+	}
+	receipt.VerificationReceiptID = deterministicArtifactID(
+		"archive-verification",
+		receipt.PromotionReceiptID,
+		receipt.AttestationID,
+		packagePath,
+		receipt.CurrentPolicyVersion,
+		receipt.VerifiedAt,
+		receipt.VerifiedBy,
+	)
+	receipt.Status = "verified"
+	return receipt, nil
+}
+
+func BuildSignerRotationActivationAuditRetainedInventorySnapshot(
+	request SignerRotationActivationAuditRetainedInventorySnapshotRequest,
+) (SignerRotationActivationAuditRetainedInventorySnapshot, error) {
+	if len(request.Packages) == 0 {
+		return SignerRotationActivationAuditRetainedInventorySnapshot{}, fmt.Errorf("retained inventory snapshot requires at least one promoted package")
+	}
+	snapshot := SignerRotationActivationAuditRetainedInventorySnapshot{
+		Version: "1.0.0",
+		Status:  "consistent",
+		Entries: []SignerRotationActivationAuditRetainedInventorySnapshotEntry{},
+		Issues:  []string{},
+	}
+	type orderedEntry struct {
+		entry   SignerRotationActivationAuditRetainedInventorySnapshotEntry
+		sortKey string
+	}
+	ordered := make([]orderedEntry, 0, len(request.Packages))
+	seenPolicyVersions := make(map[string]string, len(request.Packages))
+	seenPromotionReceipts := make(map[string]string, len(request.Packages))
+	seenAttestations := make(map[string]string, len(request.Packages))
+	seenVerificationReceipts := make(map[string]string, len(request.Packages))
+	for _, item := range request.Packages {
+		verificationReceipt := item.VerificationReceipt
+		promotion := item.PromotionResult
+		path := strings.TrimSpace(item.PromotionPath)
+		if path == "" {
+			snapshot.Issues = append(snapshot.Issues, "retained inventory promotion_path must be set")
+			continue
+		}
+		promotionResultDigest, err := digestJSON(promotion, "activation audit archive promotion result")
+		if err != nil {
+			return SignerRotationActivationAuditRetainedInventorySnapshot{}, err
+		}
+		promotionReceiptDigest, err := digestJSON(promotion.PromotionReceipt, "activation audit archive promotion receipt")
+		if err != nil {
+			return SignerRotationActivationAuditRetainedInventorySnapshot{}, err
+		}
+		attestationDigest, err := digestJSON(promotion.RetainedBaselineAttestation, "activation audit retained baseline attestation")
+		if err != nil {
+			return SignerRotationActivationAuditRetainedInventorySnapshot{}, err
+		}
+		verificationReceiptDigest, err := digestJSON(verificationReceipt, "activation audit archive promotion verification receipt")
+		if err != nil {
+			return SignerRotationActivationAuditRetainedInventorySnapshot{}, err
+		}
+		entry := SignerRotationActivationAuditRetainedInventorySnapshotEntry{
+			PromotionPath:             path,
+			Status:                    verificationReceipt.Status,
+			Verified:                  verificationReceipt.Status == "verified",
+			VerificationReceiptID:     verificationReceipt.VerificationReceiptID,
+			PromotionReceiptID:        promotion.PromotionReceipt.ReceiptID,
+			AttestationID:             promotion.RetainedBaselineAttestation.AttestationID,
+			ChainID:                   promotion.PromotionReceipt.ChainID,
+			PolicyPath:                promotion.PromotionReceipt.PolicyPath,
+			CurrentPolicyVersion:      promotion.PromotionReceipt.CurrentPolicyVersion,
+			CurrentPolicyDigest:       promotion.PromotionReceipt.CurrentPolicyDigest,
+			LatestReceiptID:           promotion.PromotionReceipt.LatestReceiptID,
+			LatestTargetVersion:       promotion.PromotionReceipt.LatestTargetVersion,
+			PromotedAt:                promotion.PromotionReceipt.PromotedAt,
+			PromotedBy:                promotion.PromotionReceipt.PromotedBy,
+			VerifiedAt:                verificationReceipt.VerifiedAt,
+			VerifiedBy:                verificationReceipt.VerifiedBy,
+			PromotionResultDigest:     promotionResultDigest,
+			VerificationReceiptDigest: verificationReceiptDigest,
+			VerificationIssues:        append([]string(nil), verificationReceipt.VerificationIssues...),
+		}
+		if verificationReceipt.Status != "verified" {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s is not verified", path))
+		}
+		if verificationReceipt.PromotionResultDigest != promotionResultDigest {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s promotion_result_digest mismatch", path))
+		}
+		if verificationReceipt.PromotionReceiptDigest != promotionReceiptDigest {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s promotion_receipt_digest mismatch", path))
+		}
+		if verificationReceipt.AttestationDigest != attestationDigest {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s attestation_digest mismatch", path))
+		}
+		if verificationReceipt.PromotionReceiptID != promotion.PromotionReceipt.ReceiptID {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s promotion_receipt_id mismatch", path))
+		}
+		if verificationReceipt.AttestationID != promotion.RetainedBaselineAttestation.AttestationID {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s attestation_id mismatch", path))
+		}
+		if verificationReceipt.ChainID != promotion.PromotionReceipt.ChainID {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s chain_id mismatch", path))
+		}
+		if verificationReceipt.PolicyPath != promotion.PromotionReceipt.PolicyPath {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s policy_path mismatch", path))
+		}
+		if verificationReceipt.CurrentPolicyVersion != promotion.PromotionReceipt.CurrentPolicyVersion {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s current_policy_version mismatch", path))
+		}
+		if verificationReceipt.CurrentPolicyDigest != promotion.PromotionReceipt.CurrentPolicyDigest {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s current_policy_digest mismatch", path))
+		}
+		if verificationReceipt.ArchiveIndexDigest != promotion.PromotionReceipt.ArchiveIndexDigest {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s archive_index_digest mismatch", path))
+		}
+		if verificationReceipt.ArchiveEntryDigest != promotion.PromotionReceipt.ArchiveEntryDigest {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s archive_entry_digest mismatch", path))
+		}
+		if existing, exists := seenPolicyVersions[entry.CurrentPolicyVersion]; exists && entry.CurrentPolicyVersion != "" {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("duplicate retained inventory current_policy_version %s in %s and %s", entry.CurrentPolicyVersion, existing, path))
+		} else if entry.CurrentPolicyVersion != "" {
+			seenPolicyVersions[entry.CurrentPolicyVersion] = path
+		}
+		if existing, exists := seenPromotionReceipts[entry.PromotionReceiptID]; exists && entry.PromotionReceiptID != "" {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("duplicate retained inventory promotion_receipt_id %s in %s and %s", entry.PromotionReceiptID, existing, path))
+		} else if entry.PromotionReceiptID != "" {
+			seenPromotionReceipts[entry.PromotionReceiptID] = path
+		}
+		if existing, exists := seenAttestations[entry.AttestationID]; exists && entry.AttestationID != "" {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("duplicate retained inventory attestation_id %s in %s and %s", entry.AttestationID, existing, path))
+		} else if entry.AttestationID != "" {
+			seenAttestations[entry.AttestationID] = path
+		}
+		if existing, exists := seenVerificationReceipts[entry.VerificationReceiptID]; exists && entry.VerificationReceiptID != "" {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("duplicate retained inventory verification_receipt_id %s in %s and %s", entry.VerificationReceiptID, existing, path))
+		} else if entry.VerificationReceiptID != "" {
+			seenVerificationReceipts[entry.VerificationReceiptID] = path
+		}
+		if snapshot.ChainID == "" {
+			snapshot.ChainID = entry.ChainID
+		} else if entry.ChainID != "" && snapshot.ChainID != entry.ChainID {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s chain_id mismatch", path))
+		}
+		if snapshot.PolicyPath == "" {
+			snapshot.PolicyPath = entry.PolicyPath
+		} else if entry.PolicyPath != "" && snapshot.PolicyPath != entry.PolicyPath {
+			snapshot.Issues = append(snapshot.Issues, fmt.Sprintf("retained inventory package %s policy_path mismatch", path))
+		}
+		if entry.Verified {
+			snapshot.VerifiedCount++
+		}
+		ordered = append(ordered, orderedEntry{
+			entry:   entry,
+			sortKey: entry.PromotedAt + "|" + entry.CurrentPolicyVersion,
+		})
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].sortKey == ordered[j].sortKey {
+			return ordered[i].entry.PromotionPath < ordered[j].entry.PromotionPath
+		}
+		return ordered[i].sortKey < ordered[j].sortKey
+	})
+	for _, item := range ordered {
+		snapshot.Entries = append(snapshot.Entries, item.entry)
+	}
+	snapshot.PackageCount = len(snapshot.Entries)
+	if len(snapshot.Entries) > 0 {
+		latest := snapshot.Entries[len(snapshot.Entries)-1]
+		snapshot.LatestCurrentPolicyVersion = latest.CurrentPolicyVersion
+		snapshot.LatestCurrentPolicyDigest = latest.CurrentPolicyDigest
+	}
+	if len(snapshot.Issues) > 0 {
+		snapshot.Status = "invalid"
+		return snapshot, nil
+	}
+	snapshot.Status = "consistent"
+	return snapshot, nil
 }
 
 func recommendedRotationAction(rotationStatus string) string {
