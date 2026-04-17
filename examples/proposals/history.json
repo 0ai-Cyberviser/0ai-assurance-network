@@ -1,0 +1,103 @@
+{
+  "version": "proposal-history-2026-04-16",
+  "history_name": "core-governance-history",
+  "entries": [
+    {
+      "recorded_at": "2026-01-28T00:00:00Z",
+      "status": "executed",
+      "outcome": "completed",
+      "proposal": {
+        "proposal_id": "hist-grant-2026-01",
+        "title": "Seed external AI assurance pilot",
+        "summary": "Allocate treasury funds to one external audit vendor for a limited AI assurance pilot.",
+        "kind": "treasury_grant",
+        "requested_by": "0ai-core",
+        "treasury_amount_usd": 120000,
+        "affects_validators": false,
+        "changes_governance_rules": false,
+        "touches_ai_systems": true,
+        "is_emergency": false,
+        "external_dependencies": [
+          "external audit vendor"
+        ],
+        "actions": [
+          "disburse pilot treasury grant",
+          "publish assurance deliverables"
+        ]
+      }
+    },
+    {
+      "recorded_at": "2026-02-11T00:00:00Z",
+      "status": "executed",
+      "outcome": "rolled_back",
+      "proposal": {
+        "proposal_id": "hist-validator-2026-02",
+        "title": "Emergency validator rotation after signer compromise",
+        "summary": "Rotate a validator after signer compromise and rebalance consensus weights during incident response.",
+        "kind": "validator_set_change",
+        "requested_by": "token-house",
+        "treasury_amount_usd": 0,
+        "affects_validators": true,
+        "changes_governance_rules": false,
+        "touches_ai_systems": false,
+        "is_emergency": true,
+        "external_dependencies": [
+          "incident response team"
+        ],
+        "actions": [
+          "remove compromised validator",
+          "rebalance voting power",
+          "publish incident report"
+        ]
+      }
+    },
+    {
+      "recorded_at": "2026-03-03T00:00:00Z",
+      "status": "executed",
+      "outcome": "incident",
+      "proposal": {
+        "proposal_id": "hist-pause-2026-03",
+        "title": "Emergency pause after anomalous attestation cluster",
+        "summary": "Pause attestation issuance after anomalous AI safety attestations indicate coordinated fraud.",
+        "kind": "emergency_pause",
+        "requested_by": "safety-council",
+        "treasury_amount_usd": 0,
+        "affects_validators": true,
+        "changes_governance_rules": false,
+        "touches_ai_systems": true,
+        "is_emergency": true,
+        "external_dependencies": [
+          "forensic auditor"
+        ],
+        "actions": [
+          "pause attestation issuance",
+          "require emergency status page",
+          "publish postmortem timeline"
+        ]
+      }
+    },
+    {
+      "recorded_at": "2026-03-20T00:00:00Z",
+      "status": "executed",
+      "outcome": "completed",
+      "proposal": {
+        "proposal_id": "hist-validator-2026-03",
+        "title": "Incremental validator expansion for regional diversity",
+        "summary": "Add one validator and rebalance consensus weights to improve geographic diversity.",
+        "kind": "validator_set_change",
+        "requested_by": "token-house",
+        "treasury_amount_usd": 0,
+        "affects_validators": true,
+        "changes_governance_rules": false,
+        "touches_ai_systems": false,
+        "is_emergency": false,
+        "external_dependencies": [],
+        "actions": [
+          "add validator-7",
+          "rebalance voting power",
+          "publish validator onboarding checklist"
+        ]
+      }
+    }
+  ]
+}

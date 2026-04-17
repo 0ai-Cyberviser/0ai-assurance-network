@@ -1,0 +1,27 @@
+{
+  "version": "proposal-registry-2026-04-16",
+  "queue_name": "default-governance-queue",
+  "proposals": [
+    {
+      "path": "examples/proposals/treasury-grant.json",
+      "status": "pending",
+      "priority": "normal",
+      "submitted_at": "2026-04-14T00:00:00Z",
+      "owner": "0ai-core"
+    },
+    {
+      "path": "examples/proposals/emergency-pause.json",
+      "status": "pending",
+      "priority": "urgent",
+      "submitted_at": "2026-04-16T00:00:00Z",
+      "owner": "safety-council"
+    },
+    {
+      "path": "examples/proposals/validator-set-change.json",
+      "status": "pending",
+      "priority": "high",
+      "submitted_at": "2026-04-10T00:00:00Z",
+      "owner": "token-house"
+    }
+  ]
+}

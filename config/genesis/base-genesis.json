@@ -1,0 +1,37 @@
+{
+  "chain_id": "0ai-assurance-1",
+  "launch_mode": "permissioned_testnet",
+  "denoms": {
+    "base": "u0aig",
+    "display": "0AIG",
+    "reputation": "0AIR"
+  },
+  "staking": {
+    "minimum_self_bond": "500000000u0aig",
+    "unbonding_time_seconds": 1209600,
+    "max_validators": 21
+  },
+  "governance": {
+    "proposal_bond": "10000000u0aig",
+    "standard_voting_period_seconds": 604800,
+    "high_impact_timelock_seconds": 172800,
+    "safety_critical_timelock_seconds": 259200,
+    "dual_house_enabled": true
+  },
+  "attestation": {
+    "minimum_auditor_bond": "25000000u0aig",
+    "appeal_window_seconds": 259200
+  },
+  "incident": {
+    "postmortem_deadline_seconds": 604800,
+    "public_reason_codes_required": true
+  },
+  "treasury": {
+    "fee_split_percent": {
+      "treasury": 40,
+      "validators": 30,
+      "safety_grants": 20,
+      "incident_reserve": 10
+    }
+  }
+}

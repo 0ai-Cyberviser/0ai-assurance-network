@@ -1,0 +1,21 @@
+{
+  "proposal_id": "draft-pause-001",
+  "title": "Emergency pause after attestation fraud signal",
+  "summary": "Trigger an emergency pause on attestation issuance after evidence of coordinated false safety attestations.",
+  "kind": "emergency_pause",
+  "requested_by": "safety-council",
+  "treasury_amount_usd": 0,
+  "affects_validators": true,
+  "changes_governance_rules": false,
+  "touches_ai_systems": true,
+  "is_emergency": true,
+  "external_dependencies": [
+    "incident response team",
+    "forensic auditor"
+  ],
+  "actions": [
+    "pause attestation issuance",
+    "open incident declaration",
+    "require public postmortem deadline"
+  ]
+}

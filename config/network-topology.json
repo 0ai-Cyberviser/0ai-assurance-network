@@ -1,0 +1,102 @@
+{
+  "network_name": "0AI Assurance Network",
+  "chain_id": "0ai-assurance-1",
+  "mode": "permissioned_testnet",
+  "binary": "0aid",
+  "container_image": "ghcr.io/0ai-cyberviser/0ai-assurance-network:dev",
+  "persistent_peers": true,
+  "seed_nodes": [
+    {
+      "id": "seed-1",
+      "moniker": "seed-1",
+      "p2p_host": "seed-1",
+      "p2p_port": 26656
+    }
+  ],
+  "validators": [
+    {
+      "id": "val-1",
+      "moniker": "validator-1",
+      "role": "validator",
+      "ip": "10.20.0.11",
+      "rpc_port": 26657,
+      "p2p_port": 26656,
+      "app_port": 1317,
+      "prometheus_port": 26660,
+      "voting_power": 20
+    },
+    {
+      "id": "val-2",
+      "moniker": "validator-2",
+      "role": "validator",
+      "ip": "10.20.0.12",
+      "rpc_port": 27657,
+      "p2p_port": 27656,
+      "app_port": 1417,
+      "prometheus_port": 27660,
+      "voting_power": 15
+    },
+    {
+      "id": "val-3",
+      "moniker": "validator-3",
+      "role": "validator",
+      "ip": "10.20.0.13",
+      "rpc_port": 28657,
+      "p2p_port": 28656,
+      "app_port": 1517,
+      "prometheus_port": 28660,
+      "voting_power": 15
+    },
+    {
+      "id": "val-4",
+      "moniker": "validator-4",
+      "role": "validator",
+      "ip": "10.20.0.14",
+      "rpc_port": 29657,
+      "p2p_port": 29656,
+      "app_port": 1617,
+      "prometheus_port": 29660,
+      "voting_power": 15
+    },
+    {
+      "id": "val-5",
+      "moniker": "validator-5",
+      "role": "validator",
+      "ip": "10.20.0.15",
+      "rpc_port": 30657,
+      "p2p_port": 30656,
+      "app_port": 1717,
+      "prometheus_port": 30660,
+      "voting_power": 12
+    },
+    {
+      "id": "val-6",
+      "moniker": "validator-6",
+      "role": "validator",
+      "ip": "10.20.0.16",
+      "rpc_port": 31657,
+      "p2p_port": 31656,
+      "app_port": 1817,
+      "prometheus_port": 31660,
+      "voting_power": 12
+    },
+    {
+      "id": "val-7",
+      "moniker": "validator-7",
+      "role": "validator",
+      "ip": "10.20.0.17",
+      "rpc_port": 32657,
+      "p2p_port": 32656,
+      "app_port": 1917,
+      "prometheus_port": 32660,
+      "voting_power": 11
+    }
+  ],
+  "governance": {
+    "houses": [
+      "token_house",
+      "safety_council"
+    ],
+    "critical_actions_require_dual_approval": true
+  }
+}

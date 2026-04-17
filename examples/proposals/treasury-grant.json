@@ -1,0 +1,19 @@
+{
+  "proposal_id": "draft-grant-001",
+  "title": "Fund external AI assurance audit program",
+  "summary": "Allocate treasury funds to three external auditors for AI assurance and cyber-governance reviews.",
+  "kind": "treasury_grant",
+  "requested_by": "0ai-core",
+  "treasury_amount_usd": 300000,
+  "affects_validators": false,
+  "changes_governance_rules": false,
+  "touches_ai_systems": true,
+  "is_emergency": false,
+  "external_dependencies": [
+    "external audit vendor"
+  ],
+  "actions": [
+    "disburse quarterly treasury grant",
+    "publish audit cadence and accountability metrics"
+  ]
+}

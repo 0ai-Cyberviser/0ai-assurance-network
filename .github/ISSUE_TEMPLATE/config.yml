@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 0AI Security Reporting
+    url: mailto:0ai@cyberviserai.com
+    about: Use private security reporting for validator, governance, or launch-sensitive issues.
+  - name: 0AI Project Support
+    url: mailto:cyberviser@proton.me
+    about: Use email for support, partnership, or governance program questions.

@@ -1,0 +1,24 @@
+{
+  "version": "draft-2026-04-16",
+  "required_before_public_launch": [
+    "external_legal_review",
+    "securities_and_token_analysis",
+    "sanctions_and_aml_policy",
+    "external_security_audit",
+    "incident_response_plan",
+    "treasury_controls",
+    "validator_release_signing",
+    "public_governance_charter"
+  ],
+  "prohibited_shortcuts": [
+    "public_retail_sale_without_legal_review",
+    "ai_only_governance_execution",
+    "anonymous_emergency_pause",
+    "unstaked_high_trust_attestations"
+  ],
+  "safe_mode_defaults": {
+    "permissioned_testnet": true,
+    "public_transferability": false,
+    "emergency_pause_requires_postmortem": true
+  }
+}

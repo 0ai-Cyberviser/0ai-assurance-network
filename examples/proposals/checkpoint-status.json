@@ -1,0 +1,82 @@
+{
+  "version": "checkpoint-status-example-2026-04-16",
+  "checkpoints": [
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:01:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-2",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:02:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-3",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:03:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-4",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:04:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-5",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:05:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-6",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:06:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-immediate_action-7",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:07:00Z",
+      "recorded_by": "treasury-program-manager",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-approval_guardrail-1",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:08:00Z",
+      "recorded_by": "treasury-review-chair",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-approval_guardrail-2",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:09:00Z",
+      "recorded_by": "treasury-review-chair",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-approval_guardrail-3",
+      "previous_status": "in_progress",
+      "updated_at": "2026-04-16T12:10:00Z",
+      "recorded_by": "treasury-review-chair",
+      "status": "completed"
+    },
+    {
+      "checkpoint_id": "treasury-grant-0ai-core-monitoring-1",
+      "previous_status": "pending",
+      "updated_at": "2026-04-16T13:00:00Z",
+      "recorded_by": "finance-telemetry-lead",
+      "status": "in_progress"
+    }
+  ]
+}

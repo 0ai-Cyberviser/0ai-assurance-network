@@ -1,0 +1,18 @@
+{
+  "proposal_id": "draft-validator-001",
+  "title": "Expand validator set and rebalance voting power",
+  "summary": "Add two new validators, rebalance voting power, and update staking parameters for geographic diversity.",
+  "kind": "validator_set_change",
+  "requested_by": "token-house",
+  "treasury_amount_usd": 0,
+  "affects_validators": true,
+  "changes_governance_rules": false,
+  "touches_ai_systems": false,
+  "is_emergency": false,
+  "external_dependencies": [],
+  "actions": [
+    "add validator-8 and validator-9",
+    "rebalance voting power",
+    "update staking policy for diversity requirements"
+  ]
+}

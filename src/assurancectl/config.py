@@ -1,0 +1,126 @@
+"""Config loading and validation for the 0AI Assurance Network skeleton."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+class ValidationError(ValueError):
+    """Raised when repo skeleton config is invalid."""
+
+
+@dataclass(frozen=True)
+class LoadedConfig:
+    """Typed container for the repo skeleton config."""
+
+    root: Path
+    topology: dict[str, Any]
+    genesis: dict[str, Any]
+    policy: dict[str, Any]
+
+
+def root_dir(explicit_root: str | Path | None = None) -> Path:
+    if explicit_root is not None:
+        return Path(explicit_root).resolve()
+    return Path(__file__).resolve().parents[2]
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def load_config(explicit_root: str | Path | None = None) -> LoadedConfig:
+    root = root_dir(explicit_root)
+    config = root / "config"
+    return LoadedConfig(
+        root=root,
+        topology=_load_json(config / "network-topology.json"),
+        genesis=_load_json(config / "genesis" / "base-genesis.json"),
+        policy=_load_json(config / "policy" / "release-guards.json"),
+    )
+
+
+def _assert(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValidationError(message)
+
+
+def validate_topology(topology: dict[str, Any]) -> None:
+    _assert(topology["mode"] == "permissioned_testnet", "mode must be permissioned_testnet")
+    validators = topology["validators"]
+    seeds = topology["seed_nodes"]
+    _assert(len(validators) >= 7, "at least seven validators are required in the initial topology")
+    _assert(len(seeds) >= 1, "at least one seed node is required")
+
+    ids = set()
+    monikers = set()
+    ports = set()
+    voting_power_total = 0
+
+    for validator in validators:
+        validator_id = validator["id"]
+        moniker = validator["moniker"]
+        _assert(validator_id not in ids, f"duplicate validator id: {validator_id}")
+        _assert(moniker not in monikers, f"duplicate validator moniker: {moniker}")
+        ids.add(validator_id)
+        monikers.add(moniker)
+
+        for key in ("rpc_port", "p2p_port", "app_port", "prometheus_port"):
+            port = int(validator[key])
+            _assert(port not in ports, f"duplicate port detected: {port}")
+            _assert(1024 <= port <= 65535, f"invalid port: {port}")
+            ports.add(port)
+
+        voting_power_total += int(validator["voting_power"])
+
+    for seed in seeds:
+        _assert(seed["id"] not in ids, f"seed id conflicts with validator id: {seed['id']}")
+
+    _assert(voting_power_total == 100, "validator voting power must sum to 100")
+    _assert(
+        topology["governance"]["critical_actions_require_dual_approval"] is True,
+        "critical actions must require dual approval",
+    )
+
+
+def validate_genesis(genesis: dict[str, Any], topology: dict[str, Any]) -> None:
+    _assert(genesis["chain_id"] == topology["chain_id"], "genesis chain_id must match topology chain_id")
+    _assert(genesis["launch_mode"] == "permissioned_testnet", "launch_mode must be permissioned_testnet")
+
+    fee_split = genesis["treasury"]["fee_split_percent"]
+    _assert(sum(int(value) for value in fee_split.values()) == 100, "fee split must sum to 100")
+    _assert(genesis["governance"]["dual_house_enabled"] is True, "dual-house governance must be enabled")
+    _assert(
+        genesis["incident"]["public_reason_codes_required"] is True,
+        "incident module must require public reason codes",
+    )
+
+
+def validate_policy(policy: dict[str, Any]) -> None:
+    required = set(policy["required_before_public_launch"])
+    prohibited = set(policy["prohibited_shortcuts"])
+
+    _assert("external_legal_review" in required, "external legal review must be required")
+    _assert("external_security_audit" in required, "external security audit must be required")
+    _assert(
+        "public_retail_sale_without_legal_review" in prohibited,
+        "public retail sale shortcut must be prohibited",
+    )
+    _assert(
+        policy["safe_mode_defaults"]["permissioned_testnet"] is True,
+        "permissioned_testnet safe default must be enabled",
+    )
+    _assert(
+        policy["safe_mode_defaults"]["public_transferability"] is False,
+        "public_transferability safe default must be disabled",
+    )
+
+
+def validate_all(config: LoadedConfig) -> None:
+    validate_topology(config.topology)
+    validate_genesis(config.genesis, config.topology)
+    validate_policy(config.policy)

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "0ai-assurance-network"
+version = "0.1.0"
+description = "Repo skeleton and operator tooling for the 0AI Assurance Network"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Johnny Watters", email = "0ai@cyberviserai.com" }]
+maintainers = [{ name = "Johnny Watters", email = "cyberviser@proton.me" }]
+keywords = ["blockchain", "governance", "ai-safety", "cybersecurity", "appchain"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Information Technology",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: Other/Proprietary License",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://0ai-cyberviser.github.io/0ai/"
+Repository = "https://github.com/0ai-Cyberviser/0ai-assurance-network"
+Issues = "https://github.com/0ai-Cyberviser/0ai-assurance-network/issues"
+
+[project.scripts]
+assurancectl = "assurancectl.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

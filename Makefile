@@ -1,0 +1,69 @@
+.DEFAULT_GOAL := help
+PYTHON ?= python3
+GOCACHE ?= $(CURDIR)/.cache/go-build
+
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-drift go-build go-test init-node clean
+
+help:
+	@echo ""
+	@echo "0AI Assurance Network repo skeleton"
+	@echo ""
+	@echo "Targets:"
+	@echo "  validate         Validate topology, genesis, and policy config"
+	@echo "  render-localnet  Generate build/localnet artifacts from config"
+	@echo "  readiness        Generate a launch-readiness report"
+	@echo "  governance-sim   Simulate governance inference: make governance-sim PROPOSAL=examples/proposals/treasury-grant.json"
+	@echo "  governance-queue Score a registry of proposals: make governance-queue REGISTRY=examples/proposals/registry.json"
+	@echo "  governance-trends Cluster portfolio-level governance trends"
+	@echo "  governance-remediation Emit structured mitigation bundles for active trends"
+	@echo "  governance-drift Compare a proposal against governance history"
+	@echo "  go-build         Build the 0aid binary"
+	@echo "  go-test          Run Go unit tests"
+	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
+	@echo "  clean            Remove generated localnet artifacts"
+	@echo ""
+
+validate:
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli validate
+
+render-localnet:
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli render-localnet
+
+readiness:
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli readiness-report
+
+governance-sim:
+	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-sim PROPOSAL=examples/proposals/treasury-grant.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-sim --proposal $(PROPOSAL)
+
+governance-queue:
+	@test -n "$(REGISTRY)" || (echo "Usage: make governance-queue REGISTRY=examples/proposals/registry.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-queue --registry $(REGISTRY)
+
+governance-trends:
+	@test -n "$(REGISTRY)" || (echo "Usage: make governance-trends REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json" && exit 1)
+	@test -n "$(HISTORY)" || (echo "Usage: make governance-trends REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-trends --registry $(REGISTRY) --history $(HISTORY)
+
+governance-remediation:
+	@test -n "$(REGISTRY)" || (echo "Usage: make governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json" && exit 1)
+	@test -n "$(HISTORY)" || (echo "Usage: make governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-remediation --registry $(REGISTRY) --history $(HISTORY) $(if $(STATUS),--status $(STATUS),)
+
+governance-drift:
+	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)
+	@test -n "$(HISTORY)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-drift --proposal $(PROPOSAL) --history $(HISTORY)
+
+go-build:
+	GOCACHE=$(GOCACHE) go build ./cmd/0aid
+
+go-test:
+	GOCACHE=$(GOCACHE) go test ./...
+
+init-node:
+	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
+	./0aid init-node --root . --id $(ID) --out ./build/nodes/$(ID)
+
+clean:
+	rm -rf build/localnet .cache 0aid

@@ -1,0 +1,262 @@
+{
+  "version": "gov-inference-2026-04-16",
+  "engine": "0ai-governance-inference-v1",
+  "proposal_classes": {
+    "standard": {
+      "required_houses": ["token_house"],
+      "minimum_confidence": 0.55
+    },
+    "high_impact": {
+      "required_houses": ["token_house", "safety_council_review_window"],
+      "minimum_confidence": 0.65
+    },
+    "safety_critical": {
+      "required_houses": ["token_house", "safety_council"],
+      "minimum_confidence": 0.75
+    }
+  },
+  "weights": {
+    "safety_keywords": 18,
+    "emergency_flag": 28,
+    "treasury_large": 20,
+    "validator_change": 18,
+    "governance_change": 16,
+    "ai_system_impact": 14,
+    "external_dependency": 8
+  },
+  "history_weights": {
+    "risk_score_drift": 14,
+    "treasury_growth": 12,
+    "repeated_emergency": 18,
+    "requester_concentration": 10,
+    "repeated_validator_change": 10,
+    "adverse_precedent": 16
+  },
+  "thresholds": {
+    "high_impact_score": 28,
+    "safety_critical_score": 60,
+    "large_treasury_amount_usd": 250000
+  },
+  "history_thresholds": {
+    "risk_score_drift": 12,
+    "treasury_growth_ratio": 1.5,
+    "repeated_emergency": 2,
+    "requester_high_impact": 2,
+    "repeated_validator_change": 2,
+    "stable_pattern_window": 2,
+    "stable_pattern_completed_ratio": 0.75,
+    "review_drift_score": 18,
+    "escalate_drift_score": 30
+  },
+  "history_suppression": {
+    "stable_pattern_requires_non_emergency": true,
+    "suppressible_signals": [
+      "requester_concentration",
+      "repeated_validator_change"
+    ]
+  },
+  "history_windows": {
+    "recent_days": 45,
+    "baseline_days": 180,
+    "acceleration_ratio": 1.75,
+    "minimum_recent_events": 2
+  },
+  "remediation": {
+    "severity_actions": {
+      "routine": {
+        "monitoring_actions": [
+          "Keep proposal telemetry attached to the governance record until closure."
+        ]
+      },
+      "elevated": {
+        "approval_guardrails": [
+          "Require an explicit reviewer note summarizing why the cluster remains within acceptable bounds."
+        ],
+        "monitoring_actions": [
+          "Track proposal outcome and rollback telemetry for one full governance cycle."
+        ]
+      },
+      "critical": {
+        "immediate_actions": [
+          "Open a governance incident review before advancing any proposal in this cluster."
+        ],
+        "approval_guardrails": [
+          "Require dual-house review with documented dissent handling before execution."
+        ],
+        "monitoring_actions": [
+          "Publish daily status updates until the cluster returns to in-band governance behavior."
+        ],
+        "release_blockers": [
+          "Do not execute proposals in this cluster until the incident review and mitigation bundle are approved."
+        ]
+      }
+    },
+    "class_actions": {
+      "high_impact": {
+        "approval_guardrails": [
+          "Attach a rollback owner and execution checkpoint plan."
+        ]
+      },
+      "safety_critical": {
+        "release_blockers": [
+          "Safety-critical proposals require explicit safety council signoff and an expiry window."
+        ],
+        "monitoring_actions": [
+          "Capture post-execution safety telemetry within 24 hours."
+        ]
+      }
+    },
+    "signal_actions": {
+      "trend_acceleration": {
+        "immediate_actions": [
+          "Pause net-new proposals in this cluster until acceleration is explained."
+        ],
+        "approval_guardrails": [
+          "Document why proposal velocity exceeds the recent baseline."
+        ]
+      },
+      "seasonal_pressure": {
+        "approval_guardrails": [
+          "Explain why seasonal proposal volume exceeds expected levels for this proposal kind."
+        ]
+      },
+      "adverse_precedent": {
+        "release_blockers": [
+          "Attach the prior adverse precedent analysis and closure criteria before approval."
+        ]
+      },
+      "queue_cluster_repetition": {
+        "immediate_actions": [
+          "Limit this cluster to one in-flight execution until queue repetition subsides."
+        ]
+      },
+      "recent_activity": {
+        "monitoring_actions": [
+          "Review this cluster again after the current governance window closes."
+        ]
+      }
+    },
+    "kind_actions": {
+      "emergency_pause": {
+        "immediate_actions": [
+          "Publish an emergency root-cause timeline and intended recovery path."
+        ],
+        "approval_guardrails": [
+          "Bind the pause to a timed renewal vote and a public reactivation checklist."
+        ]
+      },
+      "validator_set_change": {
+        "immediate_actions": [
+          "Run validator liveness and quorum simulation before enacting validator changes."
+        ],
+        "approval_guardrails": [
+          "Stage validator changes behind a canary epoch and publish rollback thresholds."
+        ]
+      },
+      "treasury_grant": {
+        "immediate_actions": [
+          "Split treasury release into milestone-based disbursements."
+        ],
+        "approval_guardrails": [
+          "Require an independent budget reviewer for the disbursement plan."
+        ]
+      }
+    },
+    "execution_defaults": {
+      "phase_owners": {
+        "release_blocker": "governance-chair",
+        "immediate_action": "governance-ops",
+        "approval_guardrail": "token-house-secretariat",
+        "monitoring": "telemetry-ops"
+      },
+      "phase_completion": {
+        "release_blocker": "Record the blocker as cleared in the governance incident register before execution.",
+        "immediate_action": "Attach evidence of completion to the proposal execution packet.",
+        "approval_guardrail": "Capture reviewer signoff and execution conditions in the governance record.",
+        "monitoring": "Publish the monitoring record and escalation owner in the post-approval log."
+      },
+      "phase_order": {
+        "release_blocker": 1,
+        "immediate_action": 2,
+        "approval_guardrail": 3,
+        "monitoring": 4
+      },
+      "phase_dependencies": {
+        "release_blocker": [],
+        "immediate_action": ["release_blocker"],
+        "approval_guardrail": ["release_blocker", "immediate_action"],
+        "monitoring": ["release_blocker", "immediate_action", "approval_guardrail"]
+      },
+      "allowed_transitions": {
+        "pending": ["pending", "in_progress"],
+        "in_progress": ["in_progress", "completed"],
+        "completed": ["completed"]
+      },
+      "audit_requirements": {
+        "require_actor_for_non_pending": true,
+        "require_timestamp_for_non_pending": true,
+        "enforce_dependency_timestamp_order": true
+      },
+      "owner_overrides": {
+        "emergency_pause": {
+          "release_blocker": "safety-council-chair",
+          "immediate_action": "incident-commander",
+          "approval_guardrail": "safety-council-secretariat",
+          "monitoring": "security-telemetry-lead"
+        },
+        "validator_set_change": {
+          "release_blocker": "validator-ops-lead",
+          "immediate_action": "validator-ops-lead",
+          "approval_guardrail": "staking-governance-reviewer",
+          "monitoring": "network-reliability-lead"
+        },
+        "treasury_grant": {
+          "immediate_action": "treasury-program-manager",
+          "approval_guardrail": "treasury-review-chair",
+          "monitoring": "finance-telemetry-lead"
+        }
+      }
+    }
+  },
+  "minimum_classes": {
+    "emergency": "safety_critical",
+    "validator_change": "high_impact",
+    "governance_rule_change": "high_impact"
+  },
+  "keywords": {
+    "safety": [
+      "incident",
+      "slashing",
+      "emergency",
+      "attestation",
+      "safety",
+      "pause",
+      "veto",
+      "critical"
+    ],
+    "validator": [
+      "validator",
+      "staking",
+      "consensus",
+      "voting power",
+      "unbonding",
+      "peer set"
+    ],
+    "governance": [
+      "governance",
+      "council",
+      "quorum",
+      "timelock",
+      "treasury policy",
+      "proposal bond"
+    ],
+    "ai": [
+      "model",
+      "agent",
+      "inference",
+      "classifier",
+      "simulation",
+      "risk engine"
+    ]
+  }
+}
