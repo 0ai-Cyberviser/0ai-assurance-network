@@ -304,6 +304,112 @@ class AssuranceCtlTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("identity bootstrap missing active bindings for roles: treasury-program-manager", result.stderr)
 
+    def test_validate_fails_when_checkpoint_signer_actor_ownership_is_duplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for source, target in (
+                ("config/network-topology.json", "config/network-topology.json"),
+                ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
+                ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
+            ):
+                target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            signer_path = root / "config" / "governance" / "checkpoint-signers.json"
+            signer_payload = json.loads(signer_path.read_text(encoding="utf-8"))
+            signer_payload["signers"][1]["actor_id"] = signer_payload["signers"][0]["actor_id"]
+            signer_path.write_text(json.dumps(signer_payload), encoding="utf-8")
+
+            env = {"PYTHONPATH": PYTHONPATH}
+            result = subprocess.run(
+                [sys.executable, "-m", "assurancectl.cli", "--root", str(root), "validate"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("duplicate checkpoint signer actor ownership", result.stderr)
+
+    def test_validate_fails_when_checkpoint_signer_rotation_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for source, target in (
+                ("config/network-topology.json", "config/network-topology.json"),
+                ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
+                ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
+            ):
+                target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            signer_path = root / "config" / "governance" / "checkpoint-signers.json"
+            signer_payload = json.loads(signer_path.read_text(encoding="utf-8"))
+            signer_payload["signers"][0]["rotate_by"] = "2026-04-01T00:00:00Z"
+            signer_path.write_text(json.dumps(signer_payload), encoding="utf-8")
+
+            env = {"PYTHONPATH": PYTHONPATH}
+            result = subprocess.run(
+                [sys.executable, "-m", "assurancectl.cli", "--root", str(root), "validate"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("stale rotation metadata", result.stderr)
+
+    def test_validate_fails_when_checkpoint_signer_coverage_is_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for source, target in (
+                ("config/network-topology.json", "config/network-topology.json"),
+                ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
+                ("config/policy/release-guards.json", "config/policy/release-guards.json"),
+                ("config/governance/inference-policy.json", "config/governance/inference-policy.json"),
+                ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
+                ("config/identity/bootstrap.json", "config/identity/bootstrap.json"),
+            ):
+                target_path = root / target
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text((PROJECT_ROOT / source).read_text(encoding="utf-8"), encoding="utf-8")
+
+            signer_path = root / "config" / "governance" / "checkpoint-signers.json"
+            signer_payload = json.loads(signer_path.read_text(encoding="utf-8"))
+            signer_payload["signers"] = [
+                signer
+                for signer in signer_payload["signers"]
+                if signer["signer_id"] != "treasury-review-chair-bot"
+            ]
+            signer_path.write_text(json.dumps(signer_payload), encoding="utf-8")
+
+            env = {"PYTHONPATH": PYTHONPATH}
+            result = subprocess.run(
+                [sys.executable, "-m", "assurancectl.cli", "--root", str(root), "validate"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("checkpoint signer coverage missing roles: treasury-review-chair", result.stderr)
+
     def test_governance_sim_treasury_grant(self) -> None:
         result = self.run_cli(
             "governance-sim",

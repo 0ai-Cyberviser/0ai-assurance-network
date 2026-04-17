@@ -1,5 +1,6 @@
 build/localnet/
 build/nodes/
+build/*.json
 .cache/
 /0aid
 __pycache__/

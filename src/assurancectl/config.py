@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,18 @@ def load_config(explicit_root: str | Path | None = None) -> LoadedConfig:
 def _assert(condition: bool, message: str) -> None:
     if not condition:
         raise ValidationError(message)
+
+
+def _parse_utc_timestamp(value: Any, field_name: str) -> datetime:
+    text = str(value or "")
+    _assert(text != "", f"{field_name} must be set")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValidationError(f"{field_name} must be RFC3339 timestamp") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def validate_topology(topology: dict[str, Any]) -> None:
@@ -128,7 +141,17 @@ def validate_policy(policy: dict[str, Any]) -> None:
     )
 
 
-def validate_checkpoint_signers(checkpoint_signers: dict[str, Any]) -> None:
+def _required_signer_roles(inference_policy: dict[str, Any]) -> set[str]:
+    remediation = inference_policy.get("remediation", {})
+    execution_defaults = remediation.get("execution_defaults", {})
+    required: set[str] = set()
+    required.update(str(role) for role in execution_defaults.get("phase_owners", {}).values())
+    for override in execution_defaults.get("owner_overrides", {}).values():
+        required.update(str(role) for role in override.values())
+    return {role for role in required if role}
+
+
+def validate_checkpoint_signers(checkpoint_signers: dict[str, Any], inference_policy: dict[str, Any]) -> None:
     _assert(
         checkpoint_signers["signature_format"] == "0ai-hmac-sha256-v1",
         "checkpoint signer signature_format must be 0ai-hmac-sha256-v1",
@@ -141,29 +164,79 @@ def validate_checkpoint_signers(checkpoint_signers: dict[str, Any]) -> None:
         int(checkpoint_signers["maximum_signature_validity_seconds"]) > 0,
         "checkpoint signer validity window must be positive",
     )
+    rotation_policy = dict(checkpoint_signers.get("rotation_policy", {}))
+    reference_time = _parse_utc_timestamp(
+        rotation_policy.get("reference_time"),
+        "checkpoint signer rotation_policy.reference_time",
+    )
+    warning_window_days = int(rotation_policy.get("warning_window_days", 0))
+    _assert(
+        warning_window_days > 0,
+        "checkpoint signer rotation_policy.warning_window_days must be positive",
+    )
     signers = list(checkpoint_signers["signers"])
     _assert(signers, "at least one checkpoint signer must be configured")
 
     signer_ids: set[str] = set()
     key_ids: set[str] = set()
     role_bindings: set[str] = set()
+    active_actor_ids: set[str] = set()
+    active_role_coverage: dict[str, str] = {}
+    required_roles = _required_signer_roles(inference_policy)
     for signer in signers:
         actor_id = str(signer.get("actor_id", ""))
         signer_id = str(signer["signer_id"])
         key_id = str(signer["key_id"])
         shared_secret = str(signer["shared_secret"])
+        status = str(signer.get("status", ""))
         roles = [str(role) for role in signer["roles"]]
+        provisioned_at = _parse_utc_timestamp(
+            signer.get("provisioned_at"),
+            f"checkpoint signer {signer_id} provisioned_at",
+        )
+        rotate_by = _parse_utc_timestamp(
+            signer.get("rotate_by"),
+            f"checkpoint signer {signer_id} rotate_by",
+        )
         _assert(actor_id != "", f"checkpoint signer {signer_id} must declare an actor_id")
         _assert(signer_id not in signer_ids, f"duplicate checkpoint signer_id: {signer_id}")
         _assert(key_id not in key_ids, f"duplicate checkpoint key_id: {key_id}")
         _assert(shared_secret != "", f"checkpoint signer {signer_id} must declare a shared_secret")
+        _assert(status in {"active", "inactive"}, f"checkpoint signer {signer_id} has invalid status")
+        _assert(
+            rotate_by > provisioned_at,
+            f"checkpoint signer {signer_id} rotate_by must be after provisioned_at",
+        )
         _assert(roles, f"checkpoint signer {signer_id} must declare at least one role")
         for role in roles:
             binding = f"{signer_id}:{role}"
             _assert(binding not in role_bindings, f"duplicate checkpoint signer role binding: {binding}")
             role_bindings.add(binding)
+        if status == "active":
+            _assert(
+                actor_id not in active_actor_ids,
+                f"duplicate checkpoint signer actor ownership: {actor_id}",
+            )
+            _assert(
+                rotate_by > reference_time,
+                f"checkpoint signer {signer_id} has stale rotation metadata",
+            )
+            for role in roles:
+                owner = active_role_coverage.get(role)
+                _assert(
+                    owner is None,
+                    f"duplicate checkpoint signer role coverage: {role}",
+                )
+                active_role_coverage[role] = signer_id
+            active_actor_ids.add(actor_id)
         signer_ids.add(signer_id)
         key_ids.add(key_id)
+
+    missing_roles = sorted(required_roles - set(active_role_coverage))
+    _assert(
+        not missing_roles,
+        f"checkpoint signer coverage missing roles: {', '.join(missing_roles)}",
+    )
 
 
 def validate_module_plan(module_plan: dict[str, Any]) -> None:
@@ -334,7 +407,7 @@ def validate_all(config: LoadedConfig) -> None:
     validate_topology(config.topology)
     validate_genesis(config.genesis, config.topology)
     validate_policy(config.policy)
-    validate_checkpoint_signers(config.checkpoint_signers)
+    validate_checkpoint_signers(config.checkpoint_signers, config.inference_policy)
     validate_module_plan(config.module_plan)
     validate_identity_bootstrap(
         config.identity_bootstrap,

@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -23,6 +23,7 @@ help:
 	@echo "  go-test          Run Go unit tests"
 	@echo "  module-plan      Render the first registry/attestation milestone plan"
 	@echo "  identity-plan    Render the permissioned actor and role bootstrap plan"
+	@echo "  signer-manifest  Render checkpoint signer ownership and rotation plan"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -77,6 +78,9 @@ module-plan:
 
 identity-plan:
 	./0aid identity-plan --root . $(if $(OUT),--out $(OUT),)
+
+signer-manifest:
+	./0aid signer-manifest --root . $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
