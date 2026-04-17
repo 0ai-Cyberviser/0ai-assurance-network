@@ -1204,3 +1204,255 @@ func TestSignerRotationActivationAuditArchivePromotionFailsOnLineageMismatch(t *
 		t.Fatalf("expected verification drift issue, got %+v", promotion.Issues)
 	}
 }
+
+func TestVerifySignerRotationActivationAuditArchivePromotion(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: rotatedExport,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	promotion, err := BuildSignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotedAt:         "2026-04-24T00:20:00Z",
+		PromotedBy:         "governance-archive-bot",
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+
+	receipt, err := VerifySignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionVerificationRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotionResult:    promotion,
+		VerifiedAt:         "2026-04-24T00:25:00Z",
+		VerifiedBy:         "governance-audit-bot",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	if receipt.Status != "verified" {
+		t.Fatalf("unexpected promotion verification status: %s", receipt.Status)
+	}
+	if receipt.VerificationReceiptID == "" || receipt.PromotionResultDigest == "" {
+		t.Fatalf("expected populated verification receipt digests, got %+v", receipt)
+	}
+	if receipt.PromotionReceiptID != promotion.PromotionReceipt.ReceiptID {
+		t.Fatalf("unexpected promotion receipt binding: %+v", receipt)
+	}
+}
+
+func TestVerifySignerRotationActivationAuditArchivePromotionFlagsDrift(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: rotatedExport,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	promotion, err := BuildSignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotedAt:         "2026-04-24T00:20:00Z",
+		PromotedBy:         "governance-archive-bot",
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	promotion.PromotionReceipt.CurrentPolicyDigest = "deadbeef"
+
+	receipt, err := VerifySignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionVerificationRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotionResult:    promotion,
+		VerifiedAt:         "2026-04-24T00:25:00Z",
+		VerifiedBy:         "governance-audit-bot",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	if receipt.Status != "invalid" {
+		t.Fatalf("expected invalid promotion verification status, got %s", receipt.Status)
+	}
+	if len(receipt.VerificationIssues) == 0 || !strings.Contains(strings.Join(receipt.VerificationIssues, " | "), "promotion drift detected") {
+		t.Fatalf("expected promotion drift issue, got %+v", receipt.VerificationIssues)
+	}
+}
+
+func TestSignerRotationActivationAuditRetainedInventorySnapshot(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: rotatedExport,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	promotion, err := BuildSignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotedAt:         "2026-04-24T00:20:00Z",
+		PromotedBy:         "governance-archive-bot",
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	receipt, err := VerifySignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionVerificationRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotionResult:    promotion,
+		VerifiedAt:         "2026-04-24T00:25:00Z",
+		VerifiedBy:         "governance-audit-bot",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+
+	snapshot, err := BuildSignerRotationActivationAuditRetainedInventorySnapshot(SignerRotationActivationAuditRetainedInventorySnapshotRequest{
+		Packages: []SignerRotationActivationAuditRetainedInventoryPackage{
+			{
+				PromotionPath:       "build/rotation/governance-chair-archive-promotion.json",
+				PromotionResult:     promotion,
+				VerificationReceipt: receipt,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventorySnapshot failed: %v", err)
+	}
+	if snapshot.Status != "consistent" {
+		t.Fatalf("unexpected retained inventory status: %s", snapshot.Status)
+	}
+	if snapshot.PackageCount != 1 || snapshot.VerifiedCount != 1 {
+		t.Fatalf("unexpected retained inventory counts: %+v", snapshot)
+	}
+	if snapshot.LatestCurrentPolicyVersion != promotion.PromotionReceipt.CurrentPolicyVersion {
+		t.Fatalf("unexpected retained inventory latest policy version: %s", snapshot.LatestCurrentPolicyVersion)
+	}
+}
+
+func TestSignerRotationActivationAuditRetainedInventorySnapshotFlagsReceiptMismatch(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: rotatedExport,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	promotion, err := BuildSignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotedAt:         "2026-04-24T00:20:00Z",
+		PromotedBy:         "governance-archive-bot",
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	receipt, err := VerifySignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionVerificationRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotionResult:    promotion,
+		VerifiedAt:         "2026-04-24T00:25:00Z",
+		VerifiedBy:         "governance-audit-bot",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	receipt.CurrentPolicyDigest = "deadbeef"
+
+	snapshot, err := BuildSignerRotationActivationAuditRetainedInventorySnapshot(SignerRotationActivationAuditRetainedInventorySnapshotRequest{
+		Packages: []SignerRotationActivationAuditRetainedInventoryPackage{
+			{
+				PromotionPath:       "build/rotation/governance-chair-archive-promotion.json",
+				PromotionResult:     promotion,
+				VerificationReceipt: receipt,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventorySnapshot failed: %v", err)
+	}
+	if snapshot.Status != "invalid" {
+		t.Fatalf("expected invalid retained inventory status, got %s", snapshot.Status)
+	}
+	if len(snapshot.Issues) == 0 || !strings.Contains(strings.Join(snapshot.Issues, " | "), "current_policy_digest mismatch") {
+		t.Fatalf("expected retained inventory digest mismatch issue, got %+v", snapshot.Issues)
+	}
+}
