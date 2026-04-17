@@ -75,6 +75,97 @@
       "display_name": "Safety Council Delegate 1",
       "organization_id": "org-safety-council",
       "status": "active"
+    },
+    {
+      "actor_id": "op-governance-chair-1",
+      "actor_type": "operator",
+      "display_name": "Governance Chair 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-governance-ops-1",
+      "actor_type": "operator",
+      "display_name": "Governance Ops 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-token-house-secretariat-1",
+      "actor_type": "operator",
+      "display_name": "Token House Secretariat 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-telemetry-ops-1",
+      "actor_type": "operator",
+      "display_name": "Telemetry Ops 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-treasury-program-manager-1",
+      "actor_type": "operator",
+      "display_name": "Treasury Program Manager 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-treasury-review-chair-1",
+      "actor_type": "operator",
+      "display_name": "Treasury Review Chair 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-finance-telemetry-lead-1",
+      "actor_type": "operator",
+      "display_name": "Finance Telemetry Lead 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-staking-governance-reviewer-1",
+      "actor_type": "operator",
+      "display_name": "Staking Governance Reviewer 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-network-reliability-lead-1",
+      "actor_type": "operator",
+      "display_name": "Network Reliability Lead 1",
+      "organization_id": "org-0ai-core",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-safety-council-chair-1",
+      "actor_type": "operator",
+      "display_name": "Safety Council Chair 1",
+      "organization_id": "org-safety-council",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-incident-commander-1",
+      "actor_type": "operator",
+      "display_name": "Incident Commander 1",
+      "organization_id": "org-safety-council",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-safety-council-secretariat-1",
+      "actor_type": "operator",
+      "display_name": "Safety Council Secretariat 1",
+      "organization_id": "org-safety-council",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-security-telemetry-lead-1",
+      "actor_type": "operator",
+      "display_name": "Security Telemetry Lead 1",
+      "organization_id": "org-assurance-audit",
+      "status": "active"
     }
   ],
   "role_bindings": [
@@ -131,6 +222,104 @@
       "actor_id": "op-safety-council-1",
       "role": "safety_council_delegate",
       "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-governance-chair-1",
+      "role": "governance-chair",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-governance-ops-1",
+      "role": "governance-ops",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-token-house-secretariat-1",
+      "role": "token-house-secretariat",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-telemetry-ops-1",
+      "role": "telemetry-ops",
+      "scope": "monitoring",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-treasury-program-manager-1",
+      "role": "treasury-program-manager",
+      "scope": "treasury",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-treasury-review-chair-1",
+      "role": "treasury-review-chair",
+      "scope": "treasury",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-finance-telemetry-lead-1",
+      "role": "finance-telemetry-lead",
+      "scope": "treasury",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-validator-ops-1",
+      "role": "validator-ops-lead",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-staking-governance-reviewer-1",
+      "role": "staking-governance-reviewer",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-network-reliability-lead-1",
+      "role": "network-reliability-lead",
+      "scope": "monitoring",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-safety-council-chair-1",
+      "role": "safety-council-chair",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-incident-commander-1",
+      "role": "incident-commander",
+      "scope": "emergency",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-safety-council-secretariat-1",
+      "role": "safety-council-secretariat",
+      "scope": "governance",
+      "granted_by": "genesis",
+      "status": "active"
+    },
+    {
+      "actor_id": "op-security-telemetry-lead-1",
+      "role": "security-telemetry-lead",
+      "scope": "monitoring",
       "granted_by": "genesis",
       "status": "active"
     }

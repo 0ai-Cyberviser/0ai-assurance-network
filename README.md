@@ -43,6 +43,7 @@ projects/0ai-assurance-network/
 ├── cmd/0aid/
 ├── config/
 │   ├── genesis/base-genesis.json
+│   ├── governance/checkpoint-signers.json
 │   ├── governance/inference-policy.json
 │   ├── identity/bootstrap.json
 │   ├── modules/milestone-1.json
@@ -116,9 +117,10 @@ its normal cadence.
 `governance-remediation` turns those trend clusters into structured mitigation
 bundles with severity, release blockers, immediate actions, approval
 guardrails, monitoring steps, and machine-readable checkpoints with explicit
-owner roles, completion criteria, dependency ordering between phases, and
-status-aware rollups for current execution readiness. That keeps the governance
-path operationally useful once the engine detects an unstable cluster.
+owner roles, eligible bootstrap actors, assigned actor context, completion
+criteria, dependency ordering between phases, and status-aware rollups for
+current execution readiness. That keeps the governance path operationally
+useful once the engine detects an unstable cluster.
 
 Each governance command also supports `--artifact-out <path>` so external
 automation can consume a stable, versioned orchestration artifact without
@@ -128,9 +130,9 @@ scraping CLI text. The artifact contract is documented in
 `governance-replay` reconstructs deterministic current checkpoint state from an
 append-only event log or a derived snapshot. Event logs are stricter than
 snapshots: each event must include `checkpoint_id`, `previous_status`,
-`new_status`, `updated_at`, `recorded_by`, and `rationale`, and replay rejects
-duplicate, contradictory, illegal, or out-of-order history. Signed event logs
-must also include a `signature` object with:
+`new_status`, `updated_at`, `recorded_by`, `actor_id`, and `rationale`, and
+replay rejects duplicate, contradictory, illegal, or out-of-order history.
+Signed event logs must also include a `signature` object with:
 
 - `format`
 - `signer_id`
@@ -143,15 +145,20 @@ must also include a `signature` object with:
 Signer-to-role policy lives in
 `config/governance/checkpoint-signers.json`. The current repository ships
 development-only HMAC signers so the pre-launch testnet can exercise
-authenticated updates without pretending to solve production custody.
+authenticated updates without pretending to solve production custody. Each
+signer is bound to an `actor_id`, and replay only accepts signed updates when
+that actor is active in `config/identity/bootstrap.json` and actively bound to
+the claimed role.
 
 Status inputs are transition-aware. Each non-pending checkpoint update should
-include `previous_status`, `updated_at`, and `recorded_by`, and the engine only
-accepts lifecycle moves that stay inside the deterministic path
+include `previous_status`, `updated_at`, `recorded_by`, and `actor_id`, and the
+engine only accepts lifecycle moves that stay inside the deterministic path
 `pending -> in_progress -> completed`. It also validates dependency timestamp
 ordering so downstream checkpoints cannot appear to complete before the latest
 completed prerequisite. Remediation accepts either a derived checkpoint snapshot
-or a replayable append-only event log via `--status`.
+or a replayable append-only event log via `--status`, and surfaces resolved
+actor/org context in the machine-readable payload so operators can audit who is
+actually assigned to each governance checkpoint.
 
 For event logs, non-pending updates are only accepted when the signature is
 valid, the signer is authorized for the `recorded_by` role, and the update falls

@@ -8,12 +8,14 @@ import (
 )
 
 type Bundle struct {
-	Root     string
-	Topology TopologyConfig
-	Genesis  GenesisConfig
-	Policy   PolicyConfig
-	Modules  ModulePlanConfig
-	Identity IdentityBootstrapConfig
+	Root              string
+	Topology          TopologyConfig
+	Genesis           GenesisConfig
+	Policy            PolicyConfig
+	Modules           ModulePlanConfig
+	Identity          IdentityBootstrapConfig
+	InferencePolicy   map[string]any
+	CheckpointSigners map[string]any
 }
 
 type TopologyConfig struct {
@@ -210,14 +212,24 @@ func LoadBundle(root string) (Bundle, error) {
 	if err := loadJSON(filepath.Join(resolvedRoot, "config", "identity", "bootstrap.json"), &identity); err != nil {
 		return Bundle{}, err
 	}
+	var inferencePolicy map[string]any
+	if err := loadJSON(filepath.Join(resolvedRoot, "config", "governance", "inference-policy.json"), &inferencePolicy); err != nil {
+		return Bundle{}, err
+	}
+	var checkpointSigners map[string]any
+	if err := loadJSON(filepath.Join(resolvedRoot, "config", "governance", "checkpoint-signers.json"), &checkpointSigners); err != nil {
+		return Bundle{}, err
+	}
 
 	return Bundle{
-		Root:     resolvedRoot,
-		Topology: topology,
-		Genesis:  genesis,
-		Policy:   policy,
-		Modules:  modules,
-		Identity: identity,
+		Root:              resolvedRoot,
+		Topology:          topology,
+		Genesis:           genesis,
+		Policy:            policy,
+		Modules:           modules,
+		Identity:          identity,
+		InferencePolicy:   inferencePolicy,
+		CheckpointSigners: checkpointSigners,
 	}, nil
 }
 

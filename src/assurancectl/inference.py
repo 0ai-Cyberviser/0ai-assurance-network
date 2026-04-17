@@ -121,11 +121,14 @@ class GovernanceRemediationCheckpoint:
     phase: str
     phase_order: int
     owner_role: str
+    eligible_actors: list[GovernanceIdentityActorRef]
     title: str
     blocking: bool
     previous_status: str | None
     updated_at: str | None
     recorded_by: str | None
+    actor_id: str | None
+    assigned_actor: GovernanceIdentityActorRef | None
     status: str
     transition_valid: bool
     transition_note: str | None
@@ -143,6 +146,17 @@ class GovernanceCheckpointReplay:
     invalid_event_count: int
     event_alerts: list[str]
     checkpoints: dict[str, dict[str, str | None]]
+
+
+@dataclass(frozen=True)
+class GovernanceIdentityActorRef:
+    actor_id: str
+    display_name: str
+    actor_type: str
+    organization_id: str | None
+    organization_display_name: str | None
+    role: str
+    scopes: list[str]
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -172,6 +186,116 @@ def load_history(path: str | Path) -> dict[str, Any]:
 
 def load_checkpoint_statuses(path: str | Path) -> dict[str, Any]:
     return _load_json(Path(path))
+
+
+def _identity_actor_indexes(
+    identity_bootstrap: dict[str, Any] | None,
+) -> tuple[dict[str, dict[str, Any]], dict[tuple[str, str], list[str]]]:
+    actors_by_id: dict[str, dict[str, Any]] = {}
+    actor_role_scopes: dict[tuple[str, str], list[str]] = {}
+    if not identity_bootstrap:
+        return actors_by_id, actor_role_scopes
+    for actor in identity_bootstrap.get("actors", []):
+        actor_id = str(actor.get("actor_id", "")).strip()
+        if actor_id:
+            actors_by_id[actor_id] = dict(actor)
+    for binding in identity_bootstrap.get("role_bindings", []):
+        if str(binding.get("status", "")).strip() != "active":
+            continue
+        actor_id = str(binding.get("actor_id", "")).strip()
+        role = str(binding.get("role", "")).strip()
+        scope = str(binding.get("scope", "")).strip()
+        if not actor_id or not role or not scope:
+            continue
+        actor_role_scopes.setdefault((actor_id, role), [])
+        if scope not in actor_role_scopes[(actor_id, role)]:
+            actor_role_scopes[(actor_id, role)].append(scope)
+    for scopes in actor_role_scopes.values():
+        scopes.sort()
+    return actors_by_id, actor_role_scopes
+
+
+def resolve_identity_actor_ref(
+    identity_bootstrap: dict[str, Any] | None,
+    actor_id: str | None,
+    role: str | None,
+) -> GovernanceIdentityActorRef | None:
+    if not identity_bootstrap or not actor_id or not role:
+        return None
+    actors_by_id, actor_role_scopes = _identity_actor_indexes(identity_bootstrap)
+    actor = actors_by_id.get(actor_id)
+    if actor is None or str(actor.get("status", "")).strip() != "active":
+        return None
+    scopes = actor_role_scopes.get((actor_id, role), [])
+    if not scopes:
+        return None
+    organization_id = str(actor.get("organization_id", "")).strip() or None
+    organization_display_name = None
+    if organization_id:
+        organization = actors_by_id.get(organization_id)
+        if organization is not None:
+            organization_display_name = str(organization.get("display_name", "")).strip() or None
+    return GovernanceIdentityActorRef(
+        actor_id=actor_id,
+        display_name=str(actor.get("display_name", "")).strip(),
+        actor_type=str(actor.get("actor_type", "")).strip(),
+        organization_id=organization_id,
+        organization_display_name=organization_display_name,
+        role=role,
+        scopes=list(scopes),
+    )
+
+
+def resolve_role_actor_refs(
+    identity_bootstrap: dict[str, Any] | None,
+    role: str,
+) -> list[GovernanceIdentityActorRef]:
+    actors_by_id, actor_role_scopes = _identity_actor_indexes(identity_bootstrap)
+    refs: list[GovernanceIdentityActorRef] = []
+    for (actor_id, bound_role), scopes in sorted(actor_role_scopes.items()):
+        if bound_role != role:
+            continue
+        actor = actors_by_id.get(actor_id)
+        if actor is None or str(actor.get("status", "")).strip() != "active":
+            continue
+        organization_id = str(actor.get("organization_id", "")).strip() or None
+        organization_display_name = None
+        if organization_id:
+            organization = actors_by_id.get(organization_id)
+            if organization is not None:
+                organization_display_name = str(organization.get("display_name", "")).strip() or None
+        refs.append(
+            GovernanceIdentityActorRef(
+                actor_id=actor_id,
+                display_name=str(actor.get("display_name", "")).strip(),
+                actor_type=str(actor.get("actor_type", "")).strip(),
+                organization_id=organization_id,
+                organization_display_name=organization_display_name,
+                role=role,
+                scopes=list(scopes),
+            )
+        )
+    return refs
+
+
+def validate_identity_actor_role_assignment(
+    *,
+    identity_bootstrap: dict[str, Any] | None,
+    actor_id: str | None,
+    role: str | None,
+    context: str,
+) -> str | None:
+    if not identity_bootstrap or not actor_id or not role:
+        return None
+    actors_by_id, actor_role_scopes = _identity_actor_indexes(identity_bootstrap)
+    actor = actors_by_id.get(actor_id)
+    if actor is None:
+        return f"{context}: unknown actor_id {actor_id}."
+    if str(actor.get("status", "")).strip() != "active":
+        return f"{context}: actor {actor_id} is not active."
+    if (actor_id, role) not in actor_role_scopes:
+        return f"{context}: actor {actor_id} is not actively bound to role {role}."
+    return None
 
 
 def _contains_any(text: str, keywords: list[str]) -> bool:
@@ -211,6 +335,7 @@ def replay_checkpoint_state(
     statuses: dict[str, Any] | None,
     *,
     signature_policy: dict[str, Any] | None = None,
+    identity_bootstrap: dict[str, Any] | None = None,
 ) -> GovernanceCheckpointReplay:
     if not statuses:
         return GovernanceCheckpointReplay(
@@ -225,7 +350,11 @@ def replay_checkpoint_state(
     raw_events = statuses.get("events")
     if has_events_key:
         if isinstance(raw_events, list):
-            return _replay_checkpoint_events(raw_events, signature_policy=signature_policy)
+            return _replay_checkpoint_events(
+                raw_events,
+                signature_policy=signature_policy,
+                identity_bootstrap=identity_bootstrap,
+            )
         return GovernanceCheckpointReplay(
             source_kind="event_log",
             replay_event_count=0,
@@ -244,6 +373,7 @@ def replay_checkpoint_state(
                 "previous_status": None,
                 "updated_at": None,
                 "recorded_by": None,
+                "actor_id": None,
                 "status": status_name if status_name in allowed_statuses else "pending",
             }
         return GovernanceCheckpointReplay(
@@ -275,6 +405,11 @@ def replay_checkpoint_state(
                     if entry.get("recorded_by") is not None and str(entry.get("recorded_by")).strip()
                     else None
                 ),
+                "actor_id": (
+                    str(entry.get("actor_id")).strip()
+                    if entry.get("actor_id") is not None and str(entry.get("actor_id")).strip()
+                    else None
+                ),
                 "status": status if status in allowed_statuses else "pending",
             }
     return GovernanceCheckpointReplay(
@@ -293,6 +428,7 @@ def _build_checkpoint_signature_message(
     new_status: str,
     updated_at: str,
     recorded_by: str,
+    actor_id: str,
     rationale: str,
     signature_meta: dict[str, str],
 ) -> str:
@@ -302,6 +438,7 @@ def _build_checkpoint_signature_message(
         "new_status": new_status,
         "updated_at": updated_at,
         "recorded_by": recorded_by,
+        "actor_id": actor_id,
         "rationale": rationale,
         "signature": signature_meta,
     }
@@ -316,9 +453,11 @@ def _validate_signed_checkpoint_event(
     new_status: str,
     updated_at: str,
     recorded_by: str,
+    actor_id: str,
     rationale: str,
     raw_signature: Any,
     signature_policy: dict[str, Any] | None,
+    identity_bootstrap: dict[str, Any] | None,
     seen_signature_ids: set[str],
 ) -> str | None:
     if not signature_policy or not signature_policy.get("require_signatures_for_event_logs", False):
@@ -372,12 +511,28 @@ def _validate_signed_checkpoint_event(
     )
     if signer_entry is None:
         return f"Event {event_index} ({checkpoint_id}): unknown signer_id/key_id pair."
+    signer_actor_id = str(signer_entry.get("actor_id", "")).strip()
+    if not signer_actor_id:
+        return f"Event {event_index} ({checkpoint_id}): signer {signer_id} is missing actor_id."
+    if signer_actor_id != actor_id:
+        return (
+            f"Event {event_index} ({checkpoint_id}): signer {signer_id} actor {signer_actor_id} "
+            f"does not match event actor_id {actor_id}."
+        )
 
     signer_roles = [str(role).strip() for role in signer_entry.get("roles", [])]
     if recorded_by not in signer_roles:
         return (
             f"Event {event_index} ({checkpoint_id}): signer {signer_id} is not authorized for role {recorded_by}."
         )
+    identity_error = validate_identity_actor_role_assignment(
+        identity_bootstrap=identity_bootstrap,
+        actor_id=actor_id,
+        role=recorded_by,
+        context=f"Event {event_index} ({checkpoint_id})",
+    )
+    if identity_error:
+        return identity_error
 
     signature_meta = {
         "format": signature_format,
@@ -393,6 +548,7 @@ def _validate_signed_checkpoint_event(
         new_status=new_status,
         updated_at=updated_at,
         recorded_by=recorded_by,
+        actor_id=actor_id,
         rationale=rationale,
         signature_meta=signature_meta,
     )
@@ -409,6 +565,7 @@ def _replay_checkpoint_events(
     events: list[Any],
     *,
     signature_policy: dict[str, Any] | None = None,
+    identity_bootstrap: dict[str, Any] | None = None,
 ) -> GovernanceCheckpointReplay:
     allowed_statuses = {"pending", "in_progress", "completed"}
     allowed_transitions = {
@@ -438,6 +595,7 @@ def _replay_checkpoint_events(
         new_name = str(new_status).strip().lower() if new_status is not None else ""
         updated_at = str(raw_event.get("updated_at")).strip() if raw_event.get("updated_at") is not None else None
         recorded_by = str(raw_event.get("recorded_by")).strip() if raw_event.get("recorded_by") is not None else None
+        actor_id = str(raw_event.get("actor_id")).strip() if raw_event.get("actor_id") is not None else None
         rationale = str(raw_event.get("rationale")).strip() if raw_event.get("rationale") is not None else None
 
         if previous_name not in allowed_statuses:
@@ -468,6 +626,9 @@ def _replay_checkpoint_events(
         if not recorded_by:
             event_alerts.append(f"Event {index} ({checkpoint_id}): missing recorded_by.")
             continue
+        if not actor_id:
+            event_alerts.append(f"Event {index} ({checkpoint_id}): missing actor_id.")
+            continue
         if not rationale:
             event_alerts.append(f"Event {index} ({checkpoint_id}): missing rationale.")
             continue
@@ -478,9 +639,11 @@ def _replay_checkpoint_events(
             new_status=new_name,
             updated_at=updated_at,
             recorded_by=recorded_by,
+            actor_id=actor_id,
             rationale=rationale,
             raw_signature=raw_event.get("signature"),
             signature_policy=signature_policy,
+            identity_bootstrap=identity_bootstrap,
             seen_signature_ids=seen_signature_ids,
         )
         if signature_error:
@@ -507,6 +670,7 @@ def _replay_checkpoint_events(
             "previous_status": previous_name,
             "updated_at": updated_at,
             "recorded_by": recorded_by,
+            "actor_id": actor_id,
             "status": new_name,
         }
         replayed_timestamps[checkpoint_id] = parsed_timestamp
@@ -541,17 +705,23 @@ def _validate_checkpoint_audit(
     status: str,
     updated_at: str | None,
     recorded_by: str | None,
+    actor_id: str | None,
     expected_owner_role: str,
     require_actor_for_non_pending: bool,
     require_timestamp_for_non_pending: bool,
+    identity_bootstrap: dict[str, Any] | None,
 ) -> tuple[bool, str | None, datetime | None]:
     parsed_timestamp = _parse_timestamp(updated_at)
     if updated_at is not None and parsed_timestamp is None:
         return False, f"Invalid checkpoint updated_at timestamp: {updated_at}", None
 
     if status != "pending":
-        if require_actor_for_non_pending and not recorded_by:
-            return False, "Non-pending checkpoint updates must include recorded_by for audit attribution.", parsed_timestamp
+        if require_actor_for_non_pending and (not recorded_by or not actor_id):
+            return (
+                False,
+                "Non-pending checkpoint updates must include recorded_by and actor_id for audit attribution.",
+                parsed_timestamp,
+            )
         if require_timestamp_for_non_pending and not updated_at:
             return False, "Non-pending checkpoint updates must include updated_at for audit ordering.", parsed_timestamp
         if recorded_by and recorded_by != expected_owner_role:
@@ -560,6 +730,14 @@ def _validate_checkpoint_audit(
                 f"Checkpoint actor role mismatch: expected {expected_owner_role}, received {recorded_by}.",
                 parsed_timestamp,
             )
+        identity_error = validate_identity_actor_role_assignment(
+            identity_bootstrap=identity_bootstrap,
+            actor_id=actor_id,
+            role=recorded_by,
+            context="Checkpoint audit",
+        )
+        if identity_error:
+            return False, identity_error, parsed_timestamp
 
     return True, None, parsed_timestamp
 
@@ -1163,6 +1341,7 @@ def infer_governance_remediation_plans(
     policy: dict[str, Any] | None = None,
     checkpoint_statuses: dict[str, Any] | None = None,
     signature_policy: dict[str, Any] | None = None,
+    identity_bootstrap: dict[str, Any] | None = None,
 ) -> list[GovernanceRemediationPlan]:
     remediation_policy = (policy or {}).get("remediation", {})
     severity_actions = remediation_policy.get("severity_actions", {})
@@ -1180,7 +1359,11 @@ def infer_governance_remediation_plans(
     require_actor_for_non_pending = bool(audit_requirements.get("require_actor_for_non_pending", True))
     require_timestamp_for_non_pending = bool(audit_requirements.get("require_timestamp_for_non_pending", True))
     enforce_dependency_timestamp_order = bool(audit_requirements.get("enforce_dependency_timestamp_order", True))
-    checkpoint_replay = replay_checkpoint_state(checkpoint_statuses, signature_policy=signature_policy)
+    checkpoint_replay = replay_checkpoint_state(
+        checkpoint_statuses,
+        signature_policy=signature_policy,
+        identity_bootstrap=identity_bootstrap,
+    )
     normalized_statuses = checkpoint_replay.checkpoints
 
     cluster_entries: dict[str, list[GovernanceQueueEntry]] = {}
@@ -1310,7 +1493,13 @@ def infer_governance_remediation_plans(
             checkpoint_id = str(raw_checkpoint["checkpoint_id"])
             checkpoint_state = normalized_statuses.get(
                 checkpoint_id,
-                {"previous_status": None, "updated_at": None, "recorded_by": None, "status": "pending"},
+                {
+                    "previous_status": None,
+                    "updated_at": None,
+                    "recorded_by": None,
+                    "actor_id": None,
+                    "status": "pending",
+                },
             )
             previous_status = (
                 str(checkpoint_state.get("previous_status"))
@@ -1327,7 +1516,14 @@ def infer_governance_remediation_plans(
                 if checkpoint_state.get("recorded_by") is not None
                 else None
             )
+            actor_id = (
+                str(checkpoint_state.get("actor_id"))
+                if checkpoint_state.get("actor_id") is not None
+                else None
+            )
             status = str(checkpoint_state.get("status", "pending"))
+            eligible_actors = resolve_role_actor_refs(identity_bootstrap, str(raw_checkpoint["owner_role"]))
+            assigned_actor = resolve_identity_actor_ref(identity_bootstrap, actor_id, recorded_by)
             transition_valid, transition_note = _validate_checkpoint_transition(
                 previous_status,
                 status,
@@ -1339,9 +1535,11 @@ def infer_governance_remediation_plans(
                 status=status,
                 updated_at=updated_at,
                 recorded_by=recorded_by,
+                actor_id=actor_id,
                 expected_owner_role=str(raw_checkpoint["owner_role"]),
                 require_actor_for_non_pending=require_actor_for_non_pending,
                 require_timestamp_for_non_pending=require_timestamp_for_non_pending,
+                identity_bootstrap=identity_bootstrap,
             )
             if not audit_valid and audit_note and audit_note not in audit_alerts:
                 audit_alerts.append(audit_note)
@@ -1356,11 +1554,14 @@ def infer_governance_remediation_plans(
                     phase=str(raw_checkpoint["phase"]),
                     phase_order=int(raw_checkpoint["phase_order"]),
                     owner_role=str(raw_checkpoint["owner_role"]),
+                    eligible_actors=eligible_actors,
                     title=str(raw_checkpoint["title"]),
                     blocking=bool(raw_checkpoint["blocking"]),
                     previous_status=previous_status,
                     updated_at=updated_at,
                     recorded_by=recorded_by,
+                    actor_id=actor_id,
+                    assigned_actor=assigned_actor,
                     status=status,
                     transition_valid=transition_valid,
                     transition_note=transition_note,

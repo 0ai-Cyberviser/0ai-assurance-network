@@ -162,6 +162,7 @@ Each event must include:
 - `new_status`
 - `updated_at`
 - `recorded_by`
+- `actor_id`
 - `rationale`
 - `signature.format`
 - `signature.signer_id`
@@ -175,12 +176,14 @@ Signer-role bindings are defined in
 `config/governance/checkpoint-signers.json`. The current implementation uses a
 development-only HMAC verifier so the permissioned testnet can exercise actor
 verification and replay protection without pretending to be a production key
-management system.
+management system. Each signer entry is now bound to an identity bootstrap
+actor, so replay rejects any signed update where the signer, actor, and role do
+not line up with `config/identity/bootstrap.json`.
 
 The status file is not treated as an arbitrary snapshot. For non-pending
-updates, operators should provide `previous_status`, `updated_at`, and
-`recorded_by`, and the engine validates the transition against the policy
-lifecycle:
+updates, operators should provide `previous_status`, `updated_at`,
+`recorded_by`, and `actor_id`, and the engine validates the transition against
+the policy lifecycle:
 
 - `pending -> in_progress`
 - `in_progress -> completed`
@@ -190,14 +193,25 @@ Illegal moves are surfaced as transition alerts and force the current plan
 readiness to `invalid`.
 
 Audit gaps are treated the same way. The remediation engine rejects non-pending
-updates without actor attribution or timestamps, and it rejects checkpoint
+updates without actor attribution or timestamps, rejects actor/role pairs that
+are not actively bound in the identity bootstrap, and rejects checkpoint
 updates whose `updated_at` value predates the latest completed dependency.
 
 Event logs add another deterministic guarantee: replay rejects duplicate,
 contradictory, illegal, or out-of-order history. Signed event logs go further:
-replay rejects invalid signatures, wrong-role signers, expired signatures, and
-reused `signature_id` values. That means remediation can consume an event log
-directly without trusting a mutable current-state file as the source of truth.
+replay rejects invalid signatures, wrong-role signers, signer/actor mismatch,
+expired signatures, and reused `signature_id` values. That means remediation
+can consume an event log directly without trusting a mutable current-state file
+as the source of truth.
+
+When remediation plans are rendered, each checkpoint now includes:
+
+- eligible bootstrap actors for the owner role
+- the assigned actor when a checkpoint status or event log resolves one
+- organization context for the resolved actor
+
+That makes the machine-readable output usable as both a control artifact and an
+operator accountability view.
 
 Operationally, rejected or expired signatures should not be patched in place.
 They should be superseded by a new signed update or event log segment. The CLI
