@@ -1,5 +1,7 @@
 # 0AI Assurance Network
 
+[![CI](https://github.com/0ai-Cyberviser/0ai-assurance-network/actions/workflows/ci.yml/badge.svg)](https://github.com/0ai-Cyberviser/0ai-assurance-network/actions/workflows/ci.yml)
+
 This directory is the standalone seed repository for the future `0AI Assurance
 Network` appchain. It is separate from the earlier concept package in
 [`initiatives/0ai-assurance-network`](../../initiatives/0ai-assurance-network)
@@ -27,6 +29,10 @@ next engineering phase.
 The code, docs, branding, and launch design in this repository are controlled
 by `Johnny Watters`. This repository does not itself create a live cryptoasset,
 grant protocol equity, or authorize a public token sale.
+
+Canonical repository:
+
+- https://github.com/0ai-Cyberviser/0ai-assurance-network
 
 ## Layout
 

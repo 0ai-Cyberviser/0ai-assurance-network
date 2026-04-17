@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
+GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
 .PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-drift go-build go-test init-node clean
 
@@ -56,10 +57,10 @@ governance-drift:
 	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-drift --proposal $(PROPOSAL) --history $(HISTORY)
 
 go-build:
-	GOCACHE=$(GOCACHE) go build ./cmd/0aid
+	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) go build ./cmd/0aid
 
 go-test:
-	GOCACHE=$(GOCACHE) go test ./...
+	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) go test ./...
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
