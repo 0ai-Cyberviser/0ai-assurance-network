@@ -5,7 +5,12 @@
   "maximum_signature_validity_seconds": 86400,
   "rotation_policy": {
     "reference_time": "2026-04-17T00:00:00Z",
-    "warning_window_days": 14
+    "warning_window_days": 14,
+    "approval_roles": [
+      "governance-ops",
+      "token-house-secretariat",
+      "telemetry-ops"
+    ]
   },
   "signers": [
     {
