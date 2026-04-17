@@ -13,6 +13,7 @@ from .inference import (
     infer_governance_queue,
     infer_governance_remediation_plans,
     load_checkpoint_statuses,
+    load_checkpoint_signer_policy,
     infer_governance_report,
     load_history,
     load_inference_policy,
@@ -548,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
         registry = load_registry(args.registry)
         history = load_history(args.history)
         policy = load_inference_policy(config)
+        signer_policy = load_checkpoint_signer_policy(config)
         checkpoint_statuses = load_checkpoint_statuses(args.status) if args.status else None
         entries = infer_governance_queue(config, registry, registry_path=args.registry, history=history, policy=policy)
         trends = infer_governance_portfolio_trends(entries, history=history, policy=policy)
@@ -556,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
             trends,
             policy=policy,
             checkpoint_statuses=checkpoint_statuses,
+            signature_policy=signer_policy,
         )
         _print_governance_remediation(plans, emit_json=args.json)
         return (
@@ -566,7 +569,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "governance-replay":
         checkpoint_statuses = load_checkpoint_statuses(args.status)
-        replay = replay_checkpoint_state(checkpoint_statuses)
+        signer_policy = load_checkpoint_signer_policy(config)
+        replay = replay_checkpoint_state(checkpoint_statuses, signature_policy=signer_policy)
         _print_governance_replay(replay, emit_json=args.json)
         return 0 if replay.invalid_event_count == 0 else 2
 

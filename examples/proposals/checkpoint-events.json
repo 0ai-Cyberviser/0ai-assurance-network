@@ -7,7 +7,16 @@
       "new_status": "in_progress",
       "updated_at": "2026-04-16T11:51:00Z",
       "recorded_by": "treasury-program-manager",
-      "rationale": "Started milestone release planning."
+      "rationale": "Started milestone release planning.",
+      "signature": {
+        "format": "0ai-hmac-sha256-v1",
+        "signer_id": "treasury-program-manager-bot",
+        "key_id": "treasury-program-manager-dev-v1",
+        "signature_id": "example-immediate-action-1-start",
+        "signed_at": "2026-04-16T10:00:00Z",
+        "expires_at": "2026-04-17T10:00:00Z",
+        "value": "adce4ccf51ef95c7f284a77877af8346c2d40ca0aba2958c3eb322ec8a684ebf"
+      }
     },
     {
       "checkpoint_id": "treasury-grant-0ai-core-immediate_action-1",
@@ -15,7 +24,16 @@
       "new_status": "completed",
       "updated_at": "2026-04-16T12:01:00Z",
       "recorded_by": "treasury-program-manager",
-      "rationale": "Milestone release plan approved."
+      "rationale": "Milestone release plan approved.",
+      "signature": {
+        "format": "0ai-hmac-sha256-v1",
+        "signer_id": "treasury-program-manager-bot",
+        "key_id": "treasury-program-manager-dev-v1",
+        "signature_id": "example-immediate-action-1-complete",
+        "signed_at": "2026-04-16T10:00:00Z",
+        "expires_at": "2026-04-17T10:00:00Z",
+        "value": "0d796900e2f95ab5c76048422ab0f4c679fec4cc20bf0182b1724a938fd8472d"
+      }
     },
     {
       "checkpoint_id": "treasury-grant-0ai-core-immediate_action-2",
@@ -23,7 +41,16 @@
       "new_status": "in_progress",
       "updated_at": "2026-04-16T11:52:00Z",
       "recorded_by": "treasury-program-manager",
-      "rationale": "Started staged release split."
+      "rationale": "Started staged release split.",
+      "signature": {
+        "format": "0ai-hmac-sha256-v1",
+        "signer_id": "treasury-program-manager-bot",
+        "key_id": "treasury-program-manager-dev-v1",
+        "signature_id": "example-immediate-action-2-start",
+        "signed_at": "2026-04-16T10:00:00Z",
+        "expires_at": "2026-04-17T10:00:00Z",
+        "value": "8f5cde42bbd8593a297dd2f24225aa0a62eaf9aa62ed5a8161758d3de7aada78"
+      }
     },
     {
       "checkpoint_id": "treasury-grant-0ai-core-immediate_action-2",
@@ -31,7 +58,16 @@
       "new_status": "completed",
       "updated_at": "2026-04-16T12:02:00Z",
       "recorded_by": "treasury-program-manager",
-      "rationale": "Funding was broken into staged releases."
+      "rationale": "Funding was broken into staged releases.",
+      "signature": {
+        "format": "0ai-hmac-sha256-v1",
+        "signer_id": "treasury-program-manager-bot",
+        "key_id": "treasury-program-manager-dev-v1",
+        "signature_id": "example-immediate-action-2-complete",
+        "signed_at": "2026-04-16T10:00:00Z",
+        "expires_at": "2026-04-17T10:00:00Z",
+        "value": "6e0772a2fdb427a4d6717052376a0400c6fe19a62ccfb280a140ac7da49b4e31"
+      }
     }
   ]
 }

@@ -158,6 +158,19 @@ Each event must include:
 - `updated_at`
 - `recorded_by`
 - `rationale`
+- `signature.format`
+- `signature.signer_id`
+- `signature.key_id`
+- `signature.signature_id`
+- `signature.signed_at`
+- `signature.expires_at`
+- `signature.value`
+
+Signer-role bindings are defined in
+`config/governance/checkpoint-signers.json`. The current implementation uses a
+development-only HMAC verifier so the permissioned testnet can exercise actor
+verification and replay protection without pretending to be a production key
+management system.
 
 The status file is not treated as an arbitrary snapshot. For non-pending
 updates, operators should provide `previous_status`, `updated_at`, and
@@ -176,9 +189,15 @@ updates without actor attribution or timestamps, and it rejects checkpoint
 updates whose `updated_at` value predates the latest completed dependency.
 
 Event logs add another deterministic guarantee: replay rejects duplicate,
-contradictory, illegal, or out-of-order history. That means remediation can
-consume an event log directly without trusting a mutable current-state file as
-the source of truth.
+contradictory, illegal, or out-of-order history. Signed event logs go further:
+replay rejects invalid signatures, wrong-role signers, expired signatures, and
+reused `signature_id` values. That means remediation can consume an event log
+directly without trusting a mutable current-state file as the source of truth.
+
+Operationally, rejected or expired signatures should not be patched in place.
+They should be superseded by a new signed update or event log segment. The CLI
+surfaces those failures as event alerts during replay, and remediation marks the
+affected cluster as `invalid` until a clean signed update is supplied.
 
 ## Future Direction
 

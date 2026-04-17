@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -152,6 +154,10 @@ def load_inference_policy(config: LoadedConfig) -> dict[str, Any]:
     return _load_json(config.root / "config" / "governance" / "inference-policy.json")
 
 
+def load_checkpoint_signer_policy(config: LoadedConfig) -> dict[str, Any]:
+    return _load_json(config.root / "config" / "governance" / "checkpoint-signers.json")
+
+
 def load_proposal(path: str | Path) -> dict[str, Any]:
     return _load_json(Path(path))
 
@@ -203,6 +209,8 @@ def _checkpoint_slug(value: str) -> str:
 
 def replay_checkpoint_state(
     statuses: dict[str, Any] | None,
+    *,
+    signature_policy: dict[str, Any] | None = None,
 ) -> GovernanceCheckpointReplay:
     if not statuses:
         return GovernanceCheckpointReplay(
@@ -217,7 +225,7 @@ def replay_checkpoint_state(
     raw_events = statuses.get("events")
     if has_events_key:
         if isinstance(raw_events, list):
-            return _replay_checkpoint_events(raw_events)
+            return _replay_checkpoint_events(raw_events, signature_policy=signature_policy)
         return GovernanceCheckpointReplay(
             source_kind="event_log",
             replay_event_count=0,
@@ -278,7 +286,130 @@ def replay_checkpoint_state(
     )
 
 
-def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
+def _build_checkpoint_signature_message(
+    *,
+    checkpoint_id: str,
+    previous_status: str,
+    new_status: str,
+    updated_at: str,
+    recorded_by: str,
+    rationale: str,
+    signature_meta: dict[str, str],
+) -> str:
+    payload = {
+        "checkpoint_id": checkpoint_id,
+        "previous_status": previous_status,
+        "new_status": new_status,
+        "updated_at": updated_at,
+        "recorded_by": recorded_by,
+        "rationale": rationale,
+        "signature": signature_meta,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _validate_signed_checkpoint_event(
+    *,
+    event_index: int,
+    checkpoint_id: str,
+    previous_status: str,
+    new_status: str,
+    updated_at: str,
+    recorded_by: str,
+    rationale: str,
+    raw_signature: Any,
+    signature_policy: dict[str, Any] | None,
+    seen_signature_ids: set[str],
+) -> str | None:
+    if not signature_policy or not signature_policy.get("require_signatures_for_event_logs", False):
+        return None
+    if not isinstance(raw_signature, dict):
+        return f"Event {event_index} ({checkpoint_id}): missing signature."
+
+    signature_format = str(raw_signature.get("format", "")).strip()
+    signer_id = str(raw_signature.get("signer_id", "")).strip()
+    key_id = str(raw_signature.get("key_id", "")).strip()
+    signature_id = str(raw_signature.get("signature_id", "")).strip()
+    signed_at = str(raw_signature.get("signed_at", "")).strip()
+    expires_at = str(raw_signature.get("expires_at", "")).strip()
+    signature_value = str(raw_signature.get("value", "")).strip()
+
+    if not all([signature_format, signer_id, key_id, signature_id, signed_at, expires_at, signature_value]):
+        return f"Event {event_index} ({checkpoint_id}): signature metadata is incomplete."
+    if signature_format != str(signature_policy.get("signature_format", "")).strip():
+        return (
+            f"Event {event_index} ({checkpoint_id}): unsupported signature format "
+            f"{signature_format}."
+        )
+    if signature_id in seen_signature_ids:
+        return f"Event {event_index} ({checkpoint_id}): replay attempt detected for signature_id {signature_id}."
+
+    signed_timestamp = _parse_timestamp(signed_at)
+    expires_timestamp = _parse_timestamp(expires_at)
+    updated_timestamp = _parse_timestamp(updated_at)
+    if signed_timestamp is None or expires_timestamp is None or updated_timestamp is None:
+        return f"Event {event_index} ({checkpoint_id}): signature timestamps are invalid."
+    maximum_validity_seconds = int(signature_policy.get("maximum_signature_validity_seconds", 0))
+    validity_window = int((expires_timestamp - signed_timestamp).total_seconds())
+    if validity_window <= 0:
+        return f"Event {event_index} ({checkpoint_id}): signature expires before it becomes valid."
+    if maximum_validity_seconds > 0 and validity_window > maximum_validity_seconds:
+        return (
+            f"Event {event_index} ({checkpoint_id}): signature validity window exceeds policy limit."
+        )
+    if not (signed_timestamp <= updated_timestamp <= expires_timestamp):
+        return f"Event {event_index} ({checkpoint_id}): signature is expired or not yet valid for updated_at."
+
+    signer_entries = list(signature_policy.get("signers", []))
+    signer_entry = next(
+        (
+            entry
+            for entry in signer_entries
+            if str(entry.get("signer_id", "")).strip() == signer_id
+            and str(entry.get("key_id", "")).strip() == key_id
+        ),
+        None,
+    )
+    if signer_entry is None:
+        return f"Event {event_index} ({checkpoint_id}): unknown signer_id/key_id pair."
+
+    signer_roles = [str(role).strip() for role in signer_entry.get("roles", [])]
+    if recorded_by not in signer_roles:
+        return (
+            f"Event {event_index} ({checkpoint_id}): signer {signer_id} is not authorized for role {recorded_by}."
+        )
+
+    signature_meta = {
+        "format": signature_format,
+        "signer_id": signer_id,
+        "key_id": key_id,
+        "signature_id": signature_id,
+        "signed_at": signed_at,
+        "expires_at": expires_at,
+    }
+    signing_message = _build_checkpoint_signature_message(
+        checkpoint_id=checkpoint_id,
+        previous_status=previous_status,
+        new_status=new_status,
+        updated_at=updated_at,
+        recorded_by=recorded_by,
+        rationale=rationale,
+        signature_meta=signature_meta,
+    )
+    shared_secret = str(signer_entry.get("shared_secret", "")).encode("utf-8")
+    expected_value = hmac.new(shared_secret, signing_message.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_value, signature_value):
+        return f"Event {event_index} ({checkpoint_id}): invalid signature."
+
+    seen_signature_ids.add(signature_id)
+    return None
+
+
+def _replay_checkpoint_events(
+    events: list[Any],
+    *,
+    signature_policy: dict[str, Any] | None = None,
+) -> GovernanceCheckpointReplay:
     allowed_statuses = {"pending", "in_progress", "completed"}
     allowed_transitions = {
         ("pending", "in_progress"),
@@ -288,6 +419,7 @@ def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
     replayed_timestamps: dict[str, datetime] = {}
     event_alerts: list[str] = []
     replay_event_count = 0
+    seen_signature_ids: set[str] = set()
 
     for index, raw_event in enumerate(events, start=1):
         replay_event_count += 1
@@ -338,6 +470,21 @@ def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
             continue
         if not rationale:
             event_alerts.append(f"Event {index} ({checkpoint_id}): missing rationale.")
+            continue
+        signature_error = _validate_signed_checkpoint_event(
+            event_index=index,
+            checkpoint_id=checkpoint_id,
+            previous_status=previous_name,
+            new_status=new_name,
+            updated_at=updated_at,
+            recorded_by=recorded_by,
+            rationale=rationale,
+            raw_signature=raw_event.get("signature"),
+            signature_policy=signature_policy,
+            seen_signature_ids=seen_signature_ids,
+        )
+        if signature_error:
+            event_alerts.append(signature_error)
             continue
 
         current_state = replayed.get(checkpoint_id)
@@ -394,6 +541,7 @@ def _validate_checkpoint_audit(
     status: str,
     updated_at: str | None,
     recorded_by: str | None,
+    expected_owner_role: str,
     require_actor_for_non_pending: bool,
     require_timestamp_for_non_pending: bool,
 ) -> tuple[bool, str | None, datetime | None]:
@@ -406,6 +554,12 @@ def _validate_checkpoint_audit(
             return False, "Non-pending checkpoint updates must include recorded_by for audit attribution.", parsed_timestamp
         if require_timestamp_for_non_pending and not updated_at:
             return False, "Non-pending checkpoint updates must include updated_at for audit ordering.", parsed_timestamp
+        if recorded_by and recorded_by != expected_owner_role:
+            return (
+                False,
+                f"Checkpoint actor role mismatch: expected {expected_owner_role}, received {recorded_by}.",
+                parsed_timestamp,
+            )
 
     return True, None, parsed_timestamp
 
@@ -1008,6 +1162,7 @@ def infer_governance_remediation_plans(
     *,
     policy: dict[str, Any] | None = None,
     checkpoint_statuses: dict[str, Any] | None = None,
+    signature_policy: dict[str, Any] | None = None,
 ) -> list[GovernanceRemediationPlan]:
     remediation_policy = (policy or {}).get("remediation", {})
     severity_actions = remediation_policy.get("severity_actions", {})
@@ -1025,7 +1180,7 @@ def infer_governance_remediation_plans(
     require_actor_for_non_pending = bool(audit_requirements.get("require_actor_for_non_pending", True))
     require_timestamp_for_non_pending = bool(audit_requirements.get("require_timestamp_for_non_pending", True))
     enforce_dependency_timestamp_order = bool(audit_requirements.get("enforce_dependency_timestamp_order", True))
-    checkpoint_replay = replay_checkpoint_state(checkpoint_statuses)
+    checkpoint_replay = replay_checkpoint_state(checkpoint_statuses, signature_policy=signature_policy)
     normalized_statuses = checkpoint_replay.checkpoints
 
     cluster_entries: dict[str, list[GovernanceQueueEntry]] = {}
@@ -1184,6 +1339,7 @@ def infer_governance_remediation_plans(
                 status=status,
                 updated_at=updated_at,
                 recorded_by=recorded_by,
+                expected_owner_role=str(raw_checkpoint["owner_role"]),
                 require_actor_for_non_pending=require_actor_for_non_pending,
                 require_timestamp_for_non_pending=require_timestamp_for_non_pending,
             )
