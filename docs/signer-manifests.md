@@ -153,6 +153,36 @@ Finalization fails closed when:
 - approval signatures do not validate against the configured signer secret
 - approval artifacts reference a different receipt digest or replacement manifest
 
+## Activation plans
+
+`0aid signer-rotation-activate` consumes an approved bundle and emits the next
+operator artifact: a deterministic activation plan plus a full replacement
+policy payload for `config/governance/checkpoint-signers.json`.
+
+Example:
+
+```bash
+./0aid signer-rotation-activate --root . \
+  --bundle ./build/rotation/governance-chair-approved-bundle.json \
+  --incoming-shared-secret dev-secret-governance-chair-v2 \
+  --out ./build/rotation/governance-chair-activation-plan.json
+```
+
+The activation plan includes:
+
+- the current and target checkpoint signer policy versions
+- a policy patch summary for removing the outgoing signer and adding the approved replacement
+- a fully rendered resulting checkpoint signer policy
+- ordered activation steps for publishing and applying the approved rotation
+
+Activation fails closed when:
+
+- the approved bundle no longer matches the current signer policy lineage
+- the outgoing signer is already absent from the current policy
+- the incoming signer already exists in the current policy
+- the incoming shared secret is missing
+- the resulting policy would fail signer-manifest validation
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -161,6 +191,7 @@ Finalization fails closed when:
 4. Collect signed approval artifacts for every required approval role.
 5. Finalize the receipt bundle and verify it remains bound to the replacement
    manifest preview.
-6. Publish the approved bundle together with the replacement signer manifest.
-7. Update `config/governance/checkpoint-signers.json` only after the approved
+6. Render the activation plan and resulting checkpoint signer policy payload.
+7. Publish the approved bundle together with the replacement signer manifest.
+8. Update `config/governance/checkpoint-signers.json` only after the approved
    replacement manifest is ready to become the new active state.

@@ -79,6 +79,7 @@ make -C projects/0ai-assurance-network signer-manifest
 make -C projects/0ai-assurance-network signer-rotation-receipt OUTGOING_SIGNER_ID=governance-chair-bot INCOMING_SIGNER_ID=governance-chair-bot-v2 INCOMING_KEY_ID=governance-chair-dev-v2 EFFECTIVE_AT=2026-04-24T00:00:00Z
 make -C projects/0ai-assurance-network signer-rotation-approve RECEIPT=build/rotation/governance-chair-receipt.json ROLE=governance-ops SIGNER_ID=governance-ops-bot APPROVED_AT=2026-04-23T00:00:00Z
 make -C projects/0ai-assurance-network signer-rotation-finalize RECEIPT=build/rotation/governance-chair-receipt.json APPROVALS=build/rotation/governance-chair-governance-ops.json,build/rotation/governance-chair-token-house.json,build/rotation/governance-chair-telemetry.json
+make -C projects/0ai-assurance-network signer-rotation-activate BUNDLE=build/rotation/governance-chair-approved-bundle.json INCOMING_SHARED_SECRET=dev-secret-governance-chair-v2
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -202,6 +203,12 @@ bundle that can be published together with the replacement manifest. It rejects
 missing roles, duplicate approvers, receipt-digest drift, or invalid approval
 signatures.
 
+`signer-rotation-activate` consumes an approved bundle and emits a deterministic
+activation plan plus a machine-readable replacement policy for
+`config/governance/checkpoint-signers.json`. It fails closed when the approved
+bundle has drifted from the current policy lineage or when the incoming signer
+secret is missing.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -217,6 +224,7 @@ currently supports:
 - `signer-rotation-receipt`
 - `signer-rotation-approve`
 - `signer-rotation-finalize`
+- `signer-rotation-activate`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
@@ -249,6 +257,10 @@ Bootstrap examples:
   --receipt ./build/rotation/governance-chair-receipt.json \
   --approvals ./build/rotation/governance-chair-governance-ops.json,./build/rotation/governance-chair-token-house.json,./build/rotation/governance-chair-telemetry.json \
   --out ./build/rotation/governance-chair-approved-bundle.json
+./0aid signer-rotation-activate --root . \
+  --bundle ./build/rotation/governance-chair-approved-bundle.json \
+  --incoming-shared-secret dev-secret-governance-chair-v2 \
+  --out ./build/rotation/governance-chair-activation-plan.json
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
 ./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
 ./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json

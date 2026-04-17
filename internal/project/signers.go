@@ -181,6 +181,65 @@ type SignerRotationFinalizedBundle struct {
 	ReplacementSignerManifest SignerManifestOutput                `json:"replacement_signer_manifest"`
 }
 
+type CheckpointSignerPolicySigner struct {
+	ActorID       string   `json:"actor_id"`
+	SignerID      string   `json:"signer_id"`
+	KeyID         string   `json:"key_id"`
+	Status        string   `json:"status"`
+	ProvisionedAt string   `json:"provisioned_at"`
+	RotateBy      string   `json:"rotate_by"`
+	Roles         []string `json:"roles"`
+	SharedSecret  string   `json:"shared_secret"`
+}
+
+type CheckpointSignerPolicyRotationPolicy struct {
+	ReferenceTime     string   `json:"reference_time"`
+	WarningWindowDays int      `json:"warning_window_days"`
+	ApprovalRoles     []string `json:"approval_roles"`
+}
+
+type CheckpointSignerPolicyOutput struct {
+	Version                       string                               `json:"version"`
+	SignatureFormat               string                               `json:"signature_format"`
+	RequireSignaturesForEventLogs bool                                 `json:"require_signatures_for_event_logs"`
+	MaximumSignatureValidity      int                                  `json:"maximum_signature_validity_seconds"`
+	RotationPolicy                CheckpointSignerPolicyRotationPolicy `json:"rotation_policy"`
+	Signers                       []CheckpointSignerPolicySigner       `json:"signers"`
+}
+
+type SignerRotationPolicyPatch struct {
+	PolicyPath           string                       `json:"policy_path"`
+	PolicyVersionFrom    string                       `json:"policy_version_from"`
+	PolicyVersionTo      string                       `json:"policy_version_to"`
+	ReferenceTimeFrom    string                       `json:"reference_time_from"`
+	ReferenceTimeTo      string                       `json:"reference_time_to"`
+	RemoveSignerID       string                       `json:"remove_signer_id"`
+	AddSigner            CheckpointSignerPolicySigner `json:"add_signer"`
+	ResultingSignerCount int                          `json:"resulting_signer_count"`
+}
+
+type SignerRotationActivationRequest struct {
+	FinalizedBundle      SignerRotationFinalizedBundle
+	IncomingSharedSecret string
+}
+
+type SignerRotationActivationPlan struct {
+	Version              string                       `json:"version"`
+	Status               string                       `json:"status"`
+	ReceiptID            string                       `json:"receipt_id"`
+	ChainID              string                       `json:"chain_id"`
+	PolicyPath           string                       `json:"policy_path"`
+	CurrentPolicyVersion string                       `json:"current_policy_version"`
+	TargetPolicyVersion  string                       `json:"target_policy_version"`
+	EffectiveAt          string                       `json:"effective_at"`
+	FinalizedAt          string                       `json:"finalized_at"`
+	OutgoingSignerID     string                       `json:"outgoing_signer_id"`
+	IncomingSignerID     string                       `json:"incoming_signer_id"`
+	ActivationSteps      []string                     `json:"activation_steps"`
+	PolicyPatch          SignerRotationPolicyPatch    `json:"policy_patch"`
+	ResultingPolicy      CheckpointSignerPolicyOutput `json:"resulting_policy"`
+}
+
 type parsedSignerEntry struct {
 	ActorID           string
 	SignerID          string
@@ -954,6 +1013,133 @@ func finalizedAt(approvals []SignerRotationApproval) (string, error) {
 	return latest.Format(time.RFC3339), nil
 }
 
+func buildFinalizeRequestFromBundle(bundle SignerRotationFinalizedBundle) SignerRotationFinalizeRequest {
+	return SignerRotationFinalizeRequest{
+		Receipt: SignerRotationReceiptOutput{
+			Version:                   bundle.Version,
+			ChainID:                   bundle.ChainID,
+			PolicyVersion:             bundle.PolicyVersion,
+			IdentityVersion:           bundle.IdentityVersion,
+			ReceiptID:                 bundle.ReceiptID,
+			EffectiveAt:               bundle.EffectiveAt,
+			OutgoingSigner:            bundle.OutgoingSigner,
+			IncomingSigner:            bundle.IncomingSigner,
+			ApprovalRequirements:      append([]SignerRotationApprovalRequirement(nil), bundle.ApprovalRequirements...),
+			CoverageStatus:            "ready",
+			MissingRoleCoverage:       append([]string(nil), bundle.MissingRoleCoverage...),
+			ReplacementManifestRef:    bundle.ReplacementManifestRef,
+			ReplacementSignerManifest: bundle.ReplacementSignerManifest,
+		},
+		Approvals: append([]SignerRotationApproval(nil), bundle.Approvals...),
+	}
+}
+
+func ensureFinalizedBundleMatchesBundle(bundle Bundle, finalized SignerRotationFinalizedBundle) (SignerRotationFinalizedBundle, error) {
+	request := buildFinalizeRequestFromBundle(finalized)
+	expectedReceipt, err := SignerRotationReceipt(bundle, buildReceiptRequestFromOutput(request.Receipt))
+	if err != nil {
+		return SignerRotationFinalizedBundle{}, err
+	}
+	expected, err := SignerRotationFinalize(bundle, SignerRotationFinalizeRequest{
+		Receipt:   expectedReceipt,
+		Approvals: request.Approvals,
+	})
+	if err != nil {
+		return SignerRotationFinalizedBundle{}, fmt.Errorf("signer rotation finalized bundle drift detected: %w", err)
+	}
+	expectedJSON, err := json.Marshal(expected)
+	if err != nil {
+		return SignerRotationFinalizedBundle{}, fmt.Errorf("marshal expected signer rotation finalized bundle: %w", err)
+	}
+	actualJSON, err := json.Marshal(finalized)
+	if err != nil {
+		return SignerRotationFinalizedBundle{}, fmt.Errorf("marshal actual signer rotation finalized bundle: %w", err)
+	}
+	if !bytesEqual(expectedJSON, actualJSON) {
+		return SignerRotationFinalizedBundle{}, fmt.Errorf("signer rotation finalized bundle drift detected")
+	}
+	return expected, nil
+}
+
+func currentSignerPolicy(bundle Bundle) (CheckpointSignerPolicyOutput, error) {
+	rotationPolicy := stringMap(bundle.CheckpointSigners["rotation_policy"])
+	warningWindowDays, err := intValue(rotationPolicy["warning_window_days"])
+	if err != nil {
+		return CheckpointSignerPolicyOutput{}, fmt.Errorf("checkpoint signer rotation_policy.warning_window_days must be positive")
+	}
+	approvalRoles, err := governanceApprovalRoles(bundle)
+	if err != nil {
+		return CheckpointSignerPolicyOutput{}, err
+	}
+	rawSigners, ok := bundle.CheckpointSigners["signers"].([]any)
+	if !ok {
+		return CheckpointSignerPolicyOutput{}, fmt.Errorf("checkpoint signer list must be configured")
+	}
+	signers := make([]CheckpointSignerPolicySigner, 0, len(rawSigners))
+	for _, rawSigner := range rawSigners {
+		signer := stringMap(rawSigner)
+		signers = append(signers, CheckpointSignerPolicySigner{
+			ActorID:       fmt.Sprint(signer["actor_id"]),
+			SignerID:      fmt.Sprint(signer["signer_id"]),
+			KeyID:         fmt.Sprint(signer["key_id"]),
+			Status:        fmt.Sprint(signer["status"]),
+			ProvisionedAt: fmt.Sprint(signer["provisioned_at"]),
+			RotateBy:      fmt.Sprint(signer["rotate_by"]),
+			Roles:         append([]string(nil), stringSlice(signer["roles"])...),
+			SharedSecret:  fmt.Sprint(signer["shared_secret"]),
+		})
+	}
+	sort.Slice(signers, func(i, j int) bool {
+		return signers[i].SignerID < signers[j].SignerID
+	})
+	return CheckpointSignerPolicyOutput{
+		Version:                       fmt.Sprint(bundle.CheckpointSigners["version"]),
+		SignatureFormat:               fmt.Sprint(bundle.CheckpointSigners["signature_format"]),
+		RequireSignaturesForEventLogs: fmt.Sprint(bundle.CheckpointSigners["require_signatures_for_event_logs"]) == "true",
+		MaximumSignatureValidity:      maxIntValue(bundle.CheckpointSigners["maximum_signature_validity_seconds"]),
+		RotationPolicy: CheckpointSignerPolicyRotationPolicy{
+			ReferenceTime:     fmt.Sprint(rotationPolicy["reference_time"]),
+			WarningWindowDays: warningWindowDays,
+			ApprovalRoles:     append([]string(nil), approvalRoles...),
+		},
+		Signers: signers,
+	}, nil
+}
+
+func maxIntValue(value any) int {
+	parsed, _ := intValue(value)
+	return parsed
+}
+
+func activationPolicyVersion(currentVersion string, receiptID string) string {
+	return fmt.Sprintf("%s+%s", currentVersion, receiptID)
+}
+
+func policySignerFromReplacement(replacement SignerRotationReplacement, sharedSecret string) CheckpointSignerPolicySigner {
+	return CheckpointSignerPolicySigner{
+		ActorID:       replacement.ActorID,
+		SignerID:      replacement.SignerID,
+		KeyID:         replacement.KeyID,
+		Status:        "active",
+		ProvisionedAt: replacement.ProvisionedAt,
+		RotateBy:      replacement.RotateBy,
+		Roles:         append([]string(nil), replacement.Roles...),
+		SharedSecret:  sharedSecret,
+	}
+}
+
+func policyOutputToCheckpointSignerMap(policy CheckpointSignerPolicyOutput) (map[string]any, error) {
+	encoded, err := json.Marshal(policy)
+	if err != nil {
+		return nil, fmt.Errorf("marshal checkpoint signer policy output: %w", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return nil, fmt.Errorf("decode checkpoint signer policy output: %w", err)
+	}
+	return decoded, nil
+}
+
 func SignerRotationReceipt(bundle Bundle, request SignerRotationReceiptRequest) (SignerRotationReceiptOutput, error) {
 	if err := ValidateSignerManifestInputs(bundle); err != nil {
 		return SignerRotationReceiptOutput{}, err
@@ -1291,6 +1477,97 @@ func SignerRotationFinalize(bundle Bundle, request SignerRotationFinalizeRequest
 		MissingRoleCoverage:       []string{},
 		ReplacementManifestRef:    receipt.ReplacementManifestRef,
 		ReplacementSignerManifest: receipt.ReplacementSignerManifest,
+	}, nil
+}
+
+func SignerRotationActivation(bundle Bundle, request SignerRotationActivationRequest) (SignerRotationActivationPlan, error) {
+	if err := ValidateSignerManifestInputs(bundle); err != nil {
+		return SignerRotationActivationPlan{}, err
+	}
+	if strings.TrimSpace(request.IncomingSharedSecret) == "" {
+		return SignerRotationActivationPlan{}, fmt.Errorf("incoming shared secret must be set")
+	}
+	finalized, err := ensureFinalizedBundleMatchesBundle(bundle, request.FinalizedBundle)
+	if err != nil {
+		return SignerRotationActivationPlan{}, err
+	}
+	currentPolicy, err := currentSignerPolicy(bundle)
+	if err != nil {
+		return SignerRotationActivationPlan{}, err
+	}
+	signers := make([]CheckpointSignerPolicySigner, 0, len(currentPolicy.Signers))
+	foundOutgoing := false
+	foundIncoming := false
+	for _, signer := range currentPolicy.Signers {
+		if signer.SignerID == finalized.OutgoingSigner.SignerID {
+			foundOutgoing = true
+			continue
+		}
+		if signer.SignerID == finalized.IncomingSigner.SignerID {
+			foundIncoming = true
+		}
+		signers = append(signers, signer)
+	}
+	if !foundOutgoing {
+		return SignerRotationActivationPlan{}, fmt.Errorf("outgoing signer %s is not present in current checkpoint signer policy", finalized.OutgoingSigner.SignerID)
+	}
+	if foundIncoming {
+		return SignerRotationActivationPlan{}, fmt.Errorf("incoming signer %s already exists in current checkpoint signer policy", finalized.IncomingSigner.SignerID)
+	}
+
+	incomingSigner := policySignerFromReplacement(finalized.IncomingSigner, request.IncomingSharedSecret)
+	signers = append(signers, incomingSigner)
+	sort.Slice(signers, func(i, j int) bool {
+		return signers[i].SignerID < signers[j].SignerID
+	})
+
+	resultingPolicy := currentPolicy
+	resultingPolicy.Version = activationPolicyVersion(currentPolicy.Version, finalized.ReceiptID)
+	resultingPolicy.RotationPolicy.ReferenceTime = finalized.EffectiveAt
+	resultingPolicy.Signers = signers
+
+	updatedSignerMap, err := policyOutputToCheckpointSignerMap(resultingPolicy)
+	if err != nil {
+		return SignerRotationActivationPlan{}, err
+	}
+	validationBundle := bundle
+	validationBundle.CheckpointSigners = updatedSignerMap
+	if err := ValidateSignerManifestInputs(validationBundle); err != nil {
+		return SignerRotationActivationPlan{}, err
+	}
+
+	steps := []string{
+		"Verify the finalized signer rotation bundle remains bound to the current checkpoint signer policy lineage.",
+		fmt.Sprintf("Replace signer %s with %s in config/governance/checkpoint-signers.json.", finalized.OutgoingSigner.SignerID, finalized.IncomingSigner.SignerID),
+		fmt.Sprintf("Set checkpoint signer policy version to %s and advance rotation reference_time to %s.", resultingPolicy.Version, finalized.EffectiveAt),
+		fmt.Sprintf("Publish the approved bundle and replacement manifest at %s before activation.", finalized.ReplacementManifestRef),
+		"Reload signer-manifest validation against the patched policy before any governance replay or remediation signing resumes.",
+	}
+
+	return SignerRotationActivationPlan{
+		Version:              "1.0.0",
+		Status:               "ready",
+		ReceiptID:            finalized.ReceiptID,
+		ChainID:              finalized.ChainID,
+		PolicyPath:           "config/governance/checkpoint-signers.json",
+		CurrentPolicyVersion: currentPolicy.Version,
+		TargetPolicyVersion:  resultingPolicy.Version,
+		EffectiveAt:          finalized.EffectiveAt,
+		FinalizedAt:          finalized.FinalizedAt,
+		OutgoingSignerID:     finalized.OutgoingSigner.SignerID,
+		IncomingSignerID:     finalized.IncomingSigner.SignerID,
+		ActivationSteps:      steps,
+		PolicyPatch: SignerRotationPolicyPatch{
+			PolicyPath:           "config/governance/checkpoint-signers.json",
+			PolicyVersionFrom:    currentPolicy.Version,
+			PolicyVersionTo:      resultingPolicy.Version,
+			ReferenceTimeFrom:    currentPolicy.RotationPolicy.ReferenceTime,
+			ReferenceTimeTo:      resultingPolicy.RotationPolicy.ReferenceTime,
+			RemoveSignerID:       finalized.OutgoingSigner.SignerID,
+			AddSigner:            incomingSigner,
+			ResultingSignerCount: len(resultingPolicy.Signers),
+		},
+		ResultingPolicy: resultingPolicy,
 	}, nil
 }
 

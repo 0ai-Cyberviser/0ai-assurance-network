@@ -228,6 +228,40 @@ func run(args []string) error {
 			return printJSON(finalized)
 		}
 		return project.WriteJSON(filepath.Clean(*out), finalized)
+	case "signer-rotation-activate":
+		fs := flag.NewFlagSet("signer-rotation-activate", flag.ContinueOnError)
+		root := fs.String("root", ".", "project root")
+		bundlePath := fs.String("bundle", "", "finalized rotation bundle path")
+		incomingSharedSecret := fs.String("incoming-shared-secret", "", "incoming signer shared secret")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *bundlePath == "" {
+			return errors.New("signer-rotation-activate requires --bundle")
+		}
+		if *incomingSharedSecret == "" {
+			return errors.New("signer-rotation-activate requires --incoming-shared-secret")
+		}
+		bundle, err := project.LoadBundle(*root)
+		if err != nil {
+			return err
+		}
+		var finalized project.SignerRotationFinalizedBundle
+		if err := readJSONFile(filepath.Clean(*bundlePath), &finalized); err != nil {
+			return err
+		}
+		activation, err := project.SignerRotationActivation(bundle, project.SignerRotationActivationRequest{
+			FinalizedBundle:      finalized,
+			IncomingSharedSecret: *incomingSharedSecret,
+		})
+		if err != nil {
+			return err
+		}
+		if *out == "" {
+			return printJSON(activation)
+		}
+		return project.WriteJSON(filepath.Clean(*out), activation)
 	case "show-plan":
 		fs := flag.NewFlagSet("show-plan", flag.ContinueOnError)
 		root := fs.String("root", ".", "project root")
@@ -396,7 +430,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
-		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
 

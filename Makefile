@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -27,6 +27,7 @@ help:
 	@echo "  signer-rotation-receipt Render a replacement-ready signer manifest and rotation receipt stub"
 	@echo "  signer-rotation-approve Generate a signed approval artifact for a rotation receipt"
 	@echo "  signer-rotation-finalize Validate approvals and render a finalized rotation bundle"
+	@echo "  signer-rotation-activate Render an activation plan and checkpoint-signer policy patch"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -103,6 +104,11 @@ signer-rotation-finalize:
 	@test -n "$(RECEIPT)" || (echo "Usage: make signer-rotation-finalize RECEIPT=build/rotation/governance-chair-receipt.json APPROVALS=build/rotation/governance-chair-approvals.json" && exit 1)
 	@test -n "$(APPROVALS)" || (echo "Usage: make signer-rotation-finalize RECEIPT=build/rotation/governance-chair-receipt.json APPROVALS=build/rotation/governance-chair-approvals.json" && exit 1)
 	./0aid signer-rotation-finalize --root . --receipt $(RECEIPT) --approvals $(APPROVALS) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-activate:
+	@test -n "$(BUNDLE)" || (echo "Usage: make signer-rotation-activate BUNDLE=build/rotation/governance-chair-approved-bundle.json INCOMING_SHARED_SECRET=dev-secret-governance-chair-v2" && exit 1)
+	@test -n "$(INCOMING_SHARED_SECRET)" || (echo "Usage: make signer-rotation-activate BUNDLE=build/rotation/governance-chair-approved-bundle.json INCOMING_SHARED_SECRET=dev-secret-governance-chair-v2" && exit 1)
+	./0aid signer-rotation-activate --root . --bundle $(BUNDLE) --incoming-shared-secret $(INCOMING_SHARED_SECRET) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)

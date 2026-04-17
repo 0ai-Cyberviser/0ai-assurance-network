@@ -386,3 +386,101 @@ func TestSignerRotationFinalizeFailsOnApprovalReceiptDrift(t *testing.T) {
 		t.Fatalf("expected approval receipt drift error, got %v", err)
 	}
 }
+
+func mustSignerRotationFinalizedBundle(t *testing.T, bundle Bundle) SignerRotationFinalizedBundle {
+	t.Helper()
+
+	receipt := mustSignerRotationReceipt(t, bundle)
+	approvals := []SignerRotationApproval{}
+	for _, item := range []struct {
+		role     string
+		signerID string
+	}{
+		{role: "governance-ops", signerID: "governance-ops-bot"},
+		{role: "token-house-secretariat", signerID: "token-house-secretariat-bot"},
+		{role: "telemetry-ops", signerID: "telemetry-ops-bot"},
+	} {
+		approval, err := GenerateSignerRotationApproval(bundle, SignerRotationApprovalRequest{
+			Receipt:      receipt,
+			ApprovalRole: item.role,
+			SignerID:     item.signerID,
+			ApprovedAt:   "2026-04-23T00:00:00Z",
+		})
+		if err != nil {
+			t.Fatalf("GenerateSignerRotationApproval(%s) failed: %v", item.role, err)
+		}
+		approvals = append(approvals, approval)
+	}
+
+	finalized, err := SignerRotationFinalize(bundle, SignerRotationFinalizeRequest{
+		Receipt:   receipt,
+		Approvals: approvals,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationFinalize failed: %v", err)
+	}
+	return finalized
+}
+
+func TestSignerRotationActivation(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	finalized := mustSignerRotationFinalizedBundle(t, bundle)
+	activation, err := SignerRotationActivation(bundle, SignerRotationActivationRequest{
+		FinalizedBundle:      finalized,
+		IncomingSharedSecret: "dev-secret-governance-chair-v2",
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivation failed: %v", err)
+	}
+	if activation.Status != "ready" {
+		t.Fatalf("unexpected activation status: %s", activation.Status)
+	}
+	if activation.PolicyPatch.RemoveSignerID != "governance-chair-bot" {
+		t.Fatalf("unexpected removed signer: %s", activation.PolicyPatch.RemoveSignerID)
+	}
+	if activation.PolicyPatch.AddSigner.SignerID != "governance-chair-bot-v2" {
+		t.Fatalf("unexpected replacement signer: %s", activation.PolicyPatch.AddSigner.SignerID)
+	}
+	if activation.ResultingPolicy.RotationPolicy.ReferenceTime != finalized.EffectiveAt {
+		t.Fatalf("unexpected resulting reference time: %s", activation.ResultingPolicy.RotationPolicy.ReferenceTime)
+	}
+	if activation.TargetPolicyVersion == activation.CurrentPolicyVersion {
+		t.Fatalf("expected target policy version to differ from current version")
+	}
+}
+
+func TestSignerRotationActivationFailsWithoutIncomingSharedSecret(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	finalized := mustSignerRotationFinalizedBundle(t, bundle)
+	_, err = SignerRotationActivation(bundle, SignerRotationActivationRequest{
+		FinalizedBundle: finalized,
+	})
+	if err == nil || !strings.Contains(err.Error(), "incoming shared secret must be set") {
+		t.Fatalf("expected missing shared secret error, got %v", err)
+	}
+}
+
+func TestSignerRotationActivationFailsOnBundleDrift(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	finalized := mustSignerRotationFinalizedBundle(t, bundle)
+	bundle.CheckpointSigners["version"] = "checkpoint-signers-2026-04-18"
+	_, err = SignerRotationActivation(bundle, SignerRotationActivationRequest{
+		FinalizedBundle:      finalized,
+		IncomingSharedSecret: "dev-secret-governance-chair-v2",
+	})
+	if err == nil || !strings.Contains(err.Error(), "signer rotation finalized bundle drift detected") {
+		t.Fatalf("expected finalized bundle drift error, got %v", err)
+	}
+}
