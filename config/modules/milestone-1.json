@@ -1,0 +1,341 @@
+{
+  "version": "1.0.0",
+  "milestone": "permissioned-testnet-registry-attestation",
+  "scope": "Deliver the first narrow registry and attestation flow for the permissioned testnet without expanding into full public-market modules.",
+  "mvp_modules": [
+    {
+      "name": "registry",
+      "purpose": "Track governed AI services, model releases, and declared safety metadata for permissioned operators.",
+      "state": [
+        {
+          "key": "service_records",
+          "type": "map[service_id]ServiceRecord",
+          "description": "Canonical service and model identity, owning organization, and current lifecycle status."
+        },
+        {
+          "key": "release_channels",
+          "type": "map[service_id][]ReleaseChannel",
+          "description": "Approved release channels and deployment targets for each governed service."
+        },
+        {
+          "key": "registry_actions",
+          "type": "append_only_log",
+          "description": "Operator-submitted registry changes for audit and attestation linkage."
+        }
+      ],
+      "transactions": [
+        {
+          "name": "register_service",
+          "actor_roles": ["registry_operator"],
+          "description": "Create a new governed service record with organization ownership and declared safety profile.",
+          "requires_governance": false,
+          "requires_attestation": false
+        },
+        {
+          "name": "propose_release",
+          "actor_roles": ["registry_operator"],
+          "description": "Stage a model or agent release candidate for attestation review before validator rollout.",
+          "requires_governance": false,
+          "requires_attestation": true
+        },
+        {
+          "name": "retire_service",
+          "actor_roles": ["registry_operator", "safety_council_delegate"],
+          "description": "Retire a service or freeze distribution when governance or safety policy requires it.",
+          "requires_governance": true,
+          "requires_attestation": false
+        }
+      ],
+      "operator_permissions": [
+        {
+          "role": "registry_operator",
+          "capabilities": [
+            "submit service records",
+            "propose release updates",
+            "attach declared metadata"
+          ]
+        },
+        {
+          "role": "registry_reviewer",
+          "capabilities": [
+            "validate registry completeness",
+            "reject malformed registry updates",
+            "request attestation evidence"
+          ]
+        }
+      ],
+      "governance_dependencies": [
+        "high-impact service retirement routes through bicameral governance",
+        "emergency service freeze honors safety-council override semantics"
+      ],
+      "validator_interactions": [
+        "validators only activate releases that are registry-visible and attestation-approved",
+        "validator bootstrap must reject rollout plans for unknown or retired services"
+      ]
+    },
+    {
+      "name": "attestation",
+      "purpose": "Manage safety attestations, reviewer bonds, and appeals for governed releases before validator activation.",
+      "state": [
+        {
+          "key": "attestation_records",
+          "type": "map[attestation_id]AttestationRecord",
+          "description": "Signed attestations tied to registry release proposals and audit outcomes."
+        },
+        {
+          "key": "reviewer_bonds",
+          "type": "map[reviewer_id]BondState",
+          "description": "Reviewer bond balances and slashing exposure for attestation participants."
+        },
+        {
+          "key": "appeal_windows",
+          "type": "map[attestation_id]AppealWindow",
+          "description": "Open appeal periods and finalization timers for disputed attestations."
+        }
+      ],
+      "transactions": [
+        {
+          "name": "submit_attestation",
+          "actor_roles": ["auditor_operator"],
+          "description": "Submit a safety attestation for a proposed registry release with rationale and evidence pointers.",
+          "requires_governance": false,
+          "requires_attestation": false
+        },
+        {
+          "name": "finalize_attestation",
+          "actor_roles": ["attestation_reviewer"],
+          "description": "Finalize an attestation after quorum review and make the release eligible for validator rollout.",
+          "requires_governance": false,
+          "requires_attestation": false
+        },
+        {
+          "name": "appeal_attestation",
+          "actor_roles": ["safety_council_delegate", "registry_operator"],
+          "description": "Open an appeal when new safety evidence or rollout harm invalidates an attestation outcome.",
+          "requires_governance": true,
+          "requires_attestation": false
+        }
+      ],
+      "operator_permissions": [
+        {
+          "role": "auditor_operator",
+          "capabilities": [
+            "submit attestations",
+            "update evidence references",
+            "accept bond slashing risk"
+          ]
+        },
+        {
+          "role": "attestation_reviewer",
+          "capabilities": [
+            "finalize or reject attestation bundles",
+            "start appeal windows",
+            "recommend slashing on false attestations"
+          ]
+        }
+      ],
+      "governance_dependencies": [
+        "appeals crossing the configured threshold escalate to safety-council and token-house review",
+        "slashing recommendations remain advisory until governance authorizes enforcement"
+      ],
+      "validator_interactions": [
+        "validator rollout gates on finalized attestations for release proposals",
+        "appealed or expired attestations must pause validator activation and update local rollout plans"
+      ]
+    }
+  ],
+  "dependency_surfaces": [
+    {
+      "name": "identity_core",
+      "purpose": "Resolve organizations, operators, auditors, and role bindings referenced by the MVP modules.",
+      "state": [
+        {
+          "key": "actor_records",
+          "type": "map[actor_id]ActorRecord",
+          "description": "Operator, organization, and auditor identities referenced by registry and attestation flows."
+        },
+        {
+          "key": "role_bindings",
+          "type": "map[actor_id][]RoleBinding",
+          "description": "Scoped role assignments used to authorize MVP module transactions."
+        }
+      ],
+      "transactions": [
+        {
+          "name": "register_actor",
+          "actor_roles": ["network_admin"],
+          "description": "Register an operator or organization identity for the permissioned milestone.",
+          "requires_governance": false,
+          "requires_attestation": false
+        },
+        {
+          "name": "bind_role",
+          "actor_roles": ["network_admin"],
+          "description": "Assign a bounded role required by registry and attestation transactions.",
+          "requires_governance": false,
+          "requires_attestation": false
+        }
+      ],
+      "operator_permissions": [
+        {
+          "role": "network_admin",
+          "capabilities": [
+            "register actors",
+            "assign scoped roles",
+            "revoke stale role bindings"
+          ]
+        }
+      ],
+      "governance_dependencies": [
+        "role definitions stay aligned with bicameral governance and safety-council authorities"
+      ],
+      "validator_interactions": [
+        "validator policy checks consume actor and role records before rollout execution"
+      ]
+    },
+    {
+      "name": "governance_hooks",
+      "purpose": "Provide the explicit decision points where governance can freeze releases, approve appeals, or authorize slashing.",
+      "state": [
+        {
+          "key": "governance_links",
+          "type": "map[module_action]GovernanceLink",
+          "description": "Bindings from registry and attestation actions to governance approval requirements."
+        }
+      ],
+      "transactions": [
+        {
+          "name": "link_governance_action",
+          "actor_roles": ["governance_admin"],
+          "description": "Declare which module actions need token-house, safety-council, or dual approval.",
+          "requires_governance": false,
+          "requires_attestation": false
+        }
+      ],
+      "operator_permissions": [
+        {
+          "role": "governance_admin",
+          "capabilities": [
+            "bind module actions to governance checkpoints",
+            "update rollout freeze rules"
+          ]
+        }
+      ],
+      "governance_dependencies": [
+        "inherits the existing bicameral governance policy and critical-action dual approval rules"
+      ],
+      "validator_interactions": [
+        "validator rollout plans must respect governance freeze and appeal outcomes before activation"
+      ]
+    },
+    {
+      "name": "validator_ops_hooks",
+      "purpose": "Bridge registry and attestation outcomes into validator rollout and localnet/bootstrap planning.",
+      "state": [
+        {
+          "key": "rollout_gates",
+          "type": "map[service_id]RolloutGate",
+          "description": "Current rollout eligibility derived from registry state, attestation finality, and governance overrides."
+        }
+      ],
+      "transactions": [
+        {
+          "name": "update_rollout_gate",
+          "actor_roles": ["validator_ops_lead"],
+          "description": "Project registry, attestation, and governance outcomes into validator rollout status.",
+          "requires_governance": false,
+          "requires_attestation": false
+        }
+      ],
+      "operator_permissions": [
+        {
+          "role": "validator_ops_lead",
+          "capabilities": [
+            "consume approved release metadata",
+            "block validator rollout on unresolved attestation or governance state",
+            "publish rollout gate summaries"
+          ]
+        }
+      ],
+      "governance_dependencies": [
+        "must expose safety-council and token-house freeze decisions to validator operations"
+      ],
+      "validator_interactions": [
+        "directly controls whether validators can stage or activate governed releases"
+      ]
+    }
+  ],
+  "rollout": [
+    {
+      "phase": 1,
+      "name": "identity-foundation",
+      "depends_on": [],
+      "deliverables": [
+        "actor and role state types",
+        "bounded actor-registration transactions",
+        "role-binding permission checks"
+      ],
+      "cmd_surfaces": [
+        "0aid module-plan"
+      ],
+      "chain_surfaces": [
+        "x/identity types",
+        "x/identity keeper"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "registry-mvp",
+      "depends_on": ["identity-foundation"],
+      "deliverables": [
+        "service and release state types",
+        "register_service and propose_release transactions",
+        "registry audit log events"
+      ],
+      "cmd_surfaces": [
+        "future 0aid registry-plan"
+      ],
+      "chain_surfaces": [
+        "x/registry types",
+        "x/registry keeper",
+        "x/registry message server"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "attestation-mvp",
+      "depends_on": ["registry-mvp"],
+      "deliverables": [
+        "attestation, bond, and appeal state types",
+        "submit_attestation and finalize_attestation transactions",
+        "release eligibility outputs for validator ops"
+      ],
+      "cmd_surfaces": [
+        "future 0aid attestation-plan"
+      ],
+      "chain_surfaces": [
+        "x/attest types",
+        "x/attest keeper",
+        "x/attest message server"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "governance-and-validator-hooks",
+      "depends_on": ["attestation-mvp"],
+      "deliverables": [
+        "governance linkage rules",
+        "validator rollout gate projections",
+        "freeze and appeal integration tests"
+      ],
+      "cmd_surfaces": [
+        "0aid module-plan",
+        "future 0aid rollout-gate"
+      ],
+      "chain_surfaces": [
+        "x/gov hook bindings",
+        "x/validatorops gate evaluator"
+      ]
+    }
+  ]
+}

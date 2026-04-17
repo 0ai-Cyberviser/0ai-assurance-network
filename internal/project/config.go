@@ -12,6 +12,7 @@ type Bundle struct {
 	Topology TopologyConfig
 	Genesis  GenesisConfig
 	Policy   PolicyConfig
+	Modules  ModulePlanConfig
 }
 
 type TopologyConfig struct {
@@ -46,8 +47,8 @@ type ValidatorNode struct {
 }
 
 type GovernanceTopology struct {
-	Houses                      []string `json:"houses"`
-	CriticalActionsRequireDual  bool     `json:"critical_actions_require_dual_approval"`
+	Houses                     []string `json:"houses"`
+	CriticalActionsRequireDual bool     `json:"critical_actions_require_dual_approval"`
 }
 
 type GenesisConfig struct {
@@ -68,9 +69,9 @@ type GenesisDenoms struct {
 }
 
 type GenesisStaking struct {
-	MinimumSelfBond    string `json:"minimum_self_bond"`
-	UnbondingTimeSec   int    `json:"unbonding_time_seconds"`
-	MaxValidators      int    `json:"max_validators"`
+	MinimumSelfBond  string `json:"minimum_self_bond"`
+	UnbondingTimeSec int    `json:"unbonding_time_seconds"`
+	MaxValidators    int    `json:"max_validators"`
 }
 
 type GenesisGov struct {
@@ -96,16 +97,63 @@ type GenesisTreasury struct {
 }
 
 type PolicyConfig struct {
-	Version                  string            `json:"version"`
-	RequiredBeforePublic     []string          `json:"required_before_public_launch"`
-	ProhibitedShortcuts      []string          `json:"prohibited_shortcuts"`
-	SafeModeDefaults         SafeModeDefaults  `json:"safe_mode_defaults"`
+	Version              string           `json:"version"`
+	RequiredBeforePublic []string         `json:"required_before_public_launch"`
+	ProhibitedShortcuts  []string         `json:"prohibited_shortcuts"`
+	SafeModeDefaults     SafeModeDefaults `json:"safe_mode_defaults"`
 }
 
 type SafeModeDefaults struct {
-	PermissionedTestnet             bool `json:"permissioned_testnet"`
-	PublicTransferability           bool `json:"public_transferability"`
+	PermissionedTestnet              bool `json:"permissioned_testnet"`
+	PublicTransferability            bool `json:"public_transferability"`
 	EmergencyPauseRequiresPostmortem bool `json:"emergency_pause_requires_postmortem"`
+}
+
+type ModulePlanConfig struct {
+	Version            string           `json:"version"`
+	Milestone          string           `json:"milestone"`
+	Scope              string           `json:"scope"`
+	MVPModules         []ModuleBoundary `json:"mvp_modules"`
+	DependencySurfaces []ModuleBoundary `json:"dependency_surfaces"`
+	Rollout            []ModuleRollout  `json:"rollout"`
+}
+
+type ModuleBoundary struct {
+	Name                   string               `json:"name"`
+	Purpose                string               `json:"purpose"`
+	State                  []ModuleState        `json:"state"`
+	Transactions           []ModuleTransaction  `json:"transactions"`
+	OperatorPermissions    []OperatorPermission `json:"operator_permissions"`
+	GovernanceDependencies []string             `json:"governance_dependencies"`
+	ValidatorInteractions  []string             `json:"validator_interactions"`
+}
+
+type ModuleState struct {
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+type ModuleTransaction struct {
+	Name                string   `json:"name"`
+	ActorRoles          []string `json:"actor_roles"`
+	Description         string   `json:"description"`
+	RequiresGovernance  bool     `json:"requires_governance"`
+	RequiresAttestation bool     `json:"requires_attestation"`
+}
+
+type OperatorPermission struct {
+	Role         string   `json:"role"`
+	Capabilities []string `json:"capabilities"`
+}
+
+type ModuleRollout struct {
+	Phase         int      `json:"phase"`
+	Name          string   `json:"name"`
+	DependsOn     []string `json:"depends_on"`
+	Deliverables  []string `json:"deliverables"`
+	CmdSurfaces   []string `json:"cmd_surfaces"`
+	ChainSurfaces []string `json:"chain_surfaces"`
 }
 
 func LoadBundle(root string) (Bundle, error) {
@@ -129,11 +177,17 @@ func LoadBundle(root string) (Bundle, error) {
 		return Bundle{}, err
 	}
 
+	var modules ModulePlanConfig
+	if err := loadJSON(filepath.Join(resolvedRoot, "config", "modules", "milestone-1.json"), &modules); err != nil {
+		return Bundle{}, err
+	}
+
 	return Bundle{
 		Root:     resolvedRoot,
 		Topology: topology,
 		Genesis:  genesis,
 		Policy:   policy,
+		Modules:  modules,
 	}, nil
 }
 

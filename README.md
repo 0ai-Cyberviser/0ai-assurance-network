@@ -44,6 +44,7 @@ projects/0ai-assurance-network/
 ├── config/
 │   ├── genesis/base-genesis.json
 │   ├── governance/inference-policy.json
+│   ├── modules/milestone-1.json
 │   ├── network-topology.json
 │   └── policy/release-guards.json
 ├── docs/
@@ -70,6 +71,7 @@ make -C projects/0ai-assurance-network governance-replay STATUS=examples/proposa
 make -C projects/0ai-assurance-network governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json
 make -C projects/0ai-assurance-network go-build
 make -C projects/0ai-assurance-network go-test
+make -C projects/0ai-assurance-network module-plan
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -171,6 +173,7 @@ currently supports:
 
 - `version`
 - `module-map`
+- `module-plan`
 - `show-plan`
 - `init-genesis`
 - `render-validator`
@@ -184,6 +187,7 @@ Bootstrap examples:
 
 ```bash
 ./0aid render-identity --root . --id val-3
+./0aid module-plan --root . --out ./build/module-plan.json
 ./0aid init-node --root . --id val-3 --out ./build/nodes/validator-3
 ./0aid collect-validator --bundle ./build/nodes/validator-3 --out ./build/collection/validator-3.json
 ./0aid assemble-genesis --root . --collection ./build/collection --out ./build/assembled/genesis-plan.json
@@ -227,6 +231,12 @@ The governance inference path is explicitly advisory. It helps classify and
 score proposals, but it does not vote, sign, or bypass human review. The new
 history-aware drift pass keeps that same posture while adding context from prior
 governance behavior.
+
+The first implementable chain milestone for registry and attestation scope is
+captured in [config/modules/milestone-1.json](config/modules/milestone-1.json)
+and documented in [docs/module-milestone-1.md](docs/module-milestone-1.md).
+`0aid module-plan` renders that milestone with the current chain and validator
+context so the next chain-code step has a bounded implementation sequence.
 
 ## Current Design
 

@@ -168,6 +168,7 @@ class AssuranceCtlTests(unittest.TestCase):
                 ("config/genesis/base-genesis.json", "config/genesis/base-genesis.json"),
                 ("config/policy/release-guards.json", "config/policy/release-guards.json"),
                 ("config/governance/checkpoint-signers.json", "config/governance/checkpoint-signers.json"),
+                ("config/modules/milestone-1.json", "config/modules/milestone-1.json"),
             ):
                 target_path = root / target
                 target_path.parent.mkdir(parents=True, exist_ok=True)
