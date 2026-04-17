@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-drift go-build go-test init-node clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test init-node clean
 
 help:
 	@echo ""
@@ -17,6 +17,7 @@ help:
 	@echo "  governance-queue Score a registry of proposals: make governance-queue REGISTRY=examples/proposals/registry.json"
 	@echo "  governance-trends Cluster portfolio-level governance trends"
 	@echo "  governance-remediation Emit structured mitigation bundles for active trends"
+	@echo "  governance-replay Replay checkpoint event logs into deterministic current state"
 	@echo "  governance-drift Compare a proposal against governance history"
 	@echo "  go-build         Build the 0aid binary"
 	@echo "  go-test          Run Go unit tests"
@@ -50,6 +51,10 @@ governance-remediation:
 	@test -n "$(REGISTRY)" || (echo "Usage: make governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json" && exit 1)
 	@test -n "$(HISTORY)" || (echo "Usage: make governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json" && exit 1)
 	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-remediation --registry $(REGISTRY) --history $(HISTORY) $(if $(STATUS),--status $(STATUS),)
+
+governance-replay:
+	@test -n "$(STATUS)" || (echo "Usage: make governance-replay STATUS=examples/proposals/checkpoint-events.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-replay --status $(STATUS)
 
 governance-drift:
 	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)

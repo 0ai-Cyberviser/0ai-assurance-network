@@ -97,8 +97,11 @@ class GovernanceRemediationPlan:
     current_release_readiness: str
     owner_roles: list[str]
     checkpoint_status_counts: dict[str, int]
+    replay_event_count: int
+    invalid_event_count: int
     invalid_transition_count: int
     invalid_audit_count: int
+    event_alerts: list[str]
     transition_alerts: list[str]
     audit_alerts: list[str]
     progress_summary: str
@@ -129,6 +132,15 @@ class GovernanceRemediationCheckpoint:
     ready_to_start: bool
     depends_on: list[str]
     completion_criteria: str
+
+
+@dataclass(frozen=True)
+class GovernanceCheckpointReplay:
+    source_kind: str
+    replay_event_count: int
+    invalid_event_count: int
+    event_alerts: list[str]
+    checkpoints: dict[str, dict[str, str | None]]
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -189,9 +201,31 @@ def _checkpoint_slug(value: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "-" for ch in value).strip("-")
 
 
-def _normalize_checkpoint_statuses(statuses: dict[str, Any] | None) -> dict[str, dict[str, str | None]]:
+def replay_checkpoint_state(
+    statuses: dict[str, Any] | None,
+) -> GovernanceCheckpointReplay:
     if not statuses:
-        return {}
+        return GovernanceCheckpointReplay(
+            source_kind="empty",
+            replay_event_count=0,
+            invalid_event_count=0,
+            event_alerts=[],
+            checkpoints={},
+        )
+
+    has_events_key = "events" in statuses
+    raw_events = statuses.get("events")
+    if has_events_key:
+        if isinstance(raw_events, list):
+            return _replay_checkpoint_events(raw_events)
+        return GovernanceCheckpointReplay(
+            source_kind="event_log",
+            replay_event_count=0,
+            invalid_event_count=1,
+            event_alerts=["Invalid event log schema: 'events' must be a list."],
+            checkpoints={},
+        )
+
     raw_checkpoints = statuses.get("checkpoints", statuses)
     normalized: dict[str, dict[str, str | None]] = {}
     allowed_statuses = {"pending", "in_progress", "completed"}
@@ -204,7 +238,13 @@ def _normalize_checkpoint_statuses(statuses: dict[str, Any] | None) -> dict[str,
                 "recorded_by": None,
                 "status": status_name if status_name in allowed_statuses else "pending",
             }
-        return normalized
+        return GovernanceCheckpointReplay(
+            source_kind="snapshot",
+            replay_event_count=0,
+            invalid_event_count=0,
+            event_alerts=[],
+            checkpoints=normalized,
+        )
     if isinstance(raw_checkpoints, list):
         for entry in raw_checkpoints:
             if not isinstance(entry, dict) or "checkpoint_id" not in entry:
@@ -229,7 +269,108 @@ def _normalize_checkpoint_statuses(statuses: dict[str, Any] | None) -> dict[str,
                 ),
                 "status": status if status in allowed_statuses else "pending",
             }
-    return normalized
+    return GovernanceCheckpointReplay(
+        source_kind="snapshot",
+        replay_event_count=0,
+        invalid_event_count=0,
+        event_alerts=[],
+        checkpoints=normalized,
+    )
+
+
+def _replay_checkpoint_events(events: list[Any]) -> GovernanceCheckpointReplay:
+    allowed_statuses = {"pending", "in_progress", "completed"}
+    allowed_transitions = {
+        ("pending", "in_progress"),
+        ("in_progress", "completed"),
+    }
+    replayed: dict[str, dict[str, str | None]] = {}
+    replayed_timestamps: dict[str, datetime] = {}
+    event_alerts: list[str] = []
+    replay_event_count = 0
+
+    for index, raw_event in enumerate(events, start=1):
+        replay_event_count += 1
+        if not isinstance(raw_event, dict):
+            event_alerts.append(f"Event {index}: event must be an object.")
+            continue
+
+        checkpoint_id = str(raw_event.get("checkpoint_id", "")).strip()
+        if not checkpoint_id:
+            event_alerts.append(f"Event {index}: missing checkpoint_id.")
+            continue
+
+        previous_status = raw_event.get("previous_status")
+        previous_name = str(previous_status).strip().lower() if previous_status is not None else None
+        new_status = raw_event.get("new_status", raw_event.get("status"))
+        new_name = str(new_status).strip().lower() if new_status is not None else ""
+        updated_at = str(raw_event.get("updated_at")).strip() if raw_event.get("updated_at") is not None else None
+        recorded_by = str(raw_event.get("recorded_by")).strip() if raw_event.get("recorded_by") is not None else None
+        rationale = str(raw_event.get("rationale")).strip() if raw_event.get("rationale") is not None else None
+
+        if previous_name not in allowed_statuses:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): previous_status must be one of pending, in_progress, completed."
+            )
+            continue
+        if new_name not in allowed_statuses:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): new_status must be one of pending, in_progress, completed."
+            )
+            continue
+        if previous_name == new_name:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): duplicate or no-op events are not allowed in the append-only log."
+            )
+            continue
+        if (previous_name, new_name) not in allowed_transitions:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): illegal lifecycle transition {previous_name} -> {new_name}."
+            )
+            continue
+
+        parsed_timestamp = _parse_timestamp(updated_at)
+        if parsed_timestamp is None:
+            event_alerts.append(f"Event {index} ({checkpoint_id}): invalid or missing updated_at timestamp.")
+            continue
+        if not recorded_by:
+            event_alerts.append(f"Event {index} ({checkpoint_id}): missing recorded_by.")
+            continue
+        if not rationale:
+            event_alerts.append(f"Event {index} ({checkpoint_id}): missing rationale.")
+            continue
+
+        current_state = replayed.get(checkpoint_id)
+        expected_previous = str(current_state.get("status", "pending")) if current_state is not None else "pending"
+        if previous_name != expected_previous:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): contradictory event history, expected previous_status "
+                f"{expected_previous} but received {previous_name}."
+            )
+            continue
+
+        prior_timestamp = replayed_timestamps.get(checkpoint_id)
+        if prior_timestamp is not None and parsed_timestamp <= prior_timestamp:
+            event_alerts.append(
+                f"Event {index} ({checkpoint_id}): out-of-order updated_at {updated_at}."
+            )
+            continue
+
+        replayed[checkpoint_id] = {
+            "previous_status": previous_name,
+            "updated_at": updated_at,
+            "recorded_by": recorded_by,
+            "status": new_name,
+        }
+        replayed_timestamps[checkpoint_id] = parsed_timestamp
+
+    return GovernanceCheckpointReplay(
+        source_kind="event_log",
+        replay_event_count=replay_event_count,
+        invalid_event_count=len(event_alerts),
+        event_alerts=event_alerts,
+        checkpoints=replayed,
+    )
 
 
 def _validate_checkpoint_transition(
@@ -884,7 +1025,8 @@ def infer_governance_remediation_plans(
     require_actor_for_non_pending = bool(audit_requirements.get("require_actor_for_non_pending", True))
     require_timestamp_for_non_pending = bool(audit_requirements.get("require_timestamp_for_non_pending", True))
     enforce_dependency_timestamp_order = bool(audit_requirements.get("enforce_dependency_timestamp_order", True))
-    normalized_statuses = _normalize_checkpoint_statuses(checkpoint_statuses)
+    checkpoint_replay = replay_checkpoint_state(checkpoint_statuses)
+    normalized_statuses = checkpoint_replay.checkpoints
 
     cluster_entries: dict[str, list[GovernanceQueueEntry]] = {}
     for entry in entries:
@@ -1002,6 +1144,7 @@ def infer_governance_remediation_plans(
         build_checkpoints("monitoring", monitoring_actions, blocking=False)
 
         checkpoints: list[GovernanceRemediationCheckpoint] = []
+        event_alerts = list(checkpoint_replay.event_alerts)
         transition_alerts: list[str] = []
         audit_alerts: list[str] = []
         checkpoint_timestamps: dict[str, datetime | None] = {}
@@ -1140,9 +1283,10 @@ def infer_governance_remediation_plans(
             "in_progress": sum(1 for checkpoint in checkpoints if checkpoint.status == "in_progress"),
             "completed": sum(1 for checkpoint in checkpoints if checkpoint.status == "completed"),
         }
+        invalid_event_count = checkpoint_replay.invalid_event_count
         invalid_transition_count = sum(1 for checkpoint in checkpoints if not checkpoint.transition_valid)
         invalid_audit_count = sum(1 for checkpoint in checkpoints if not checkpoint.audit_valid)
-        if invalid_transition_count > 0 or invalid_audit_count > 0:
+        if invalid_event_count > 0 or invalid_transition_count > 0 or invalid_audit_count > 0:
             current_release_readiness = "invalid"
         elif any(checkpoint.blocking and checkpoint.status != "completed" for checkpoint in checkpoints):
             current_release_readiness = "blocked"
@@ -1169,6 +1313,8 @@ def infer_governance_remediation_plans(
             f"{checkpoint_status_counts['in_progress']} in progress, "
             f"{checkpoint_status_counts['pending']} pending."
         )
+        if invalid_event_count > 0:
+            progress_summary += f" {invalid_event_count} invalid event(s) detected."
         if invalid_transition_count > 0:
             progress_summary += f" {invalid_transition_count} invalid transition(s) detected."
         if invalid_audit_count > 0:
@@ -1192,8 +1338,11 @@ def infer_governance_remediation_plans(
                 current_release_readiness=current_release_readiness,
                 owner_roles=owner_roles,
                 checkpoint_status_counts=checkpoint_status_counts,
+                replay_event_count=checkpoint_replay.replay_event_count,
+                invalid_event_count=invalid_event_count,
                 invalid_transition_count=invalid_transition_count,
                 invalid_audit_count=invalid_audit_count,
+                event_alerts=event_alerts,
                 transition_alerts=transition_alerts,
                 audit_alerts=audit_alerts,
                 progress_summary=progress_summary,

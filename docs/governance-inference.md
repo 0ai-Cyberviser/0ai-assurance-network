@@ -143,6 +143,22 @@ computes a progress-aware rollup:
 That makes the remediation output usable as a deterministic execution-progress
 view instead of a static advisory bundle only.
 
+`governance-replay` sits underneath that path. It reconstructs deterministic
+checkpoint state from either:
+
+- an append-only event log
+- a derived snapshot of current checkpoint state
+
+The event-log path is stricter and is the preferred long-term operator format.
+Each event must include:
+
+- `checkpoint_id`
+- `previous_status`
+- `new_status`
+- `updated_at`
+- `recorded_by`
+- `rationale`
+
 The status file is not treated as an arbitrary snapshot. For non-pending
 updates, operators should provide `previous_status`, `updated_at`, and
 `recorded_by`, and the engine validates the transition against the policy
@@ -158,6 +174,11 @@ readiness to `invalid`.
 Audit gaps are treated the same way. The remediation engine rejects non-pending
 updates without actor attribution or timestamps, and it rejects checkpoint
 updates whose `updated_at` value predates the latest completed dependency.
+
+Event logs add another deterministic guarantee: replay rejects duplicate,
+contradictory, illegal, or out-of-order history. That means remediation can
+consume an event log directly without trusting a mutable current-state file as
+the source of truth.
 
 ## Future Direction
 
