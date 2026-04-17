@@ -183,6 +183,67 @@ Activation fails closed when:
 - the incoming shared secret is missing
 - the resulting policy would fail signer-manifest validation
 
+## Apply results
+
+`0aid signer-rotation-apply` validates the activation plan against the current
+policy lineage and emits a machine-readable apply result plus the exact
+checkpoint signer policy that should become active.
+
+Example:
+
+```bash
+./0aid signer-rotation-apply --root . \
+  --plan ./build/rotation/governance-chair-activation-plan.json \
+  --policy-out ./build/rotation/governance-chair-applied-policy.json \
+  --out ./build/rotation/governance-chair-apply-result.json
+```
+
+The apply result includes:
+
+- `activation_plan_digest`
+- `applied_policy_digest`
+- the exact `applied_policy`
+- `target_policy_version`
+- the deterministic effective cutover time
+
+Apply fails closed when:
+
+- the activation plan no longer matches the current policy lineage
+- the resulting policy payload differs from the plan output
+- the resulting policy would fail signer-manifest validation
+
+## Post-activation verification receipts
+
+`0aid signer-rotation-verify` signs a post-activation verification receipt
+against the applied checkpoint signer policy using the newly activated signer.
+
+Example:
+
+```bash
+./0aid signer-rotation-verify --root . \
+  --plan ./build/rotation/governance-chair-activation-plan.json \
+  --policy ./build/rotation/governance-chair-applied-policy.json \
+  --verified-at 2026-04-24T00:15:00Z \
+  --out ./build/rotation/governance-chair-verification.json
+```
+
+Verification receipts include:
+
+- the activation plan digest
+- the applied policy digest
+- the signer/key that verified the activation
+- actor and organization ownership context
+- a signed verification receipt with validity bounds
+
+Verification fails closed when:
+
+- the applied policy drifts from the activation plan
+- the outgoing signer is still present
+- the incoming signer is missing
+- the incoming signer lacks a shared secret
+- `verified_at` falls before `effective_at`, before `provisioned_at`, or after
+  the incoming signer `rotate_by`
+
 ## Operator workflow
 
 1. Render the current signer manifest and identify any `expiring` signers.
@@ -192,6 +253,10 @@ Activation fails closed when:
 5. Finalize the receipt bundle and verify it remains bound to the replacement
    manifest preview.
 6. Render the activation plan and resulting checkpoint signer policy payload.
-7. Publish the approved bundle together with the replacement signer manifest.
-8. Update `config/governance/checkpoint-signers.json` only after the approved
+7. Apply the activation plan and emit the exact replacement
+   `checkpoint-signers.json` payload.
+8. Publish the approved bundle together with the replacement signer manifest.
+9. Update `config/governance/checkpoint-signers.json` only after the approved
    replacement manifest is ready to become the new active state.
+10. Sign and retain a post-activation verification receipt proving the new
+    signer set became active exactly as planned.
