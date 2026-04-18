@@ -2713,9 +2713,15 @@ func BuildSignerRotationActivationAuditArchiveIndex(
 		latestOrder string
 	}
 	indexedEntries := make([]indexedEntry, 0, len(request.Packages))
+	seenPackagePaths := make(map[string]struct{}, len(request.Packages))
 	seenVersions := make(map[string]string, len(request.Packages))
 	seenReceipts := make(map[string]string, len(request.Packages))
 	for _, item := range request.Packages {
+		if _, exists := seenPackagePaths[item.PackagePath]; exists {
+			index.Issues = append(index.Issues, fmt.Sprintf("duplicate archive package_path %s", item.PackagePath))
+		} else {
+			seenPackagePaths[item.PackagePath] = struct{}{}
+		}
 		verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
 			ExportPackage: item.ExportPackage,
 		})
@@ -2792,6 +2798,56 @@ func BuildSignerRotationActivationAuditArchiveIndex(
 	return index, nil
 }
 
+func activationAuditArchiveIndexConsistencyIssues(index SignerRotationActivationAuditArchiveIndex) []string {
+	issues := []string{}
+	if index.Version != "1.0.0" {
+		issues = append(issues, fmt.Sprintf("unexpected activation audit archive index version: %s", index.Version))
+	}
+	if index.Status != "consistent" {
+		issues = append(issues, fmt.Sprintf("activation audit archive index status must be consistent, got %s", index.Status))
+	}
+	if len(index.Issues) > 0 {
+		issues = append(issues, "activation audit archive index contains issues")
+	}
+	if len(index.Entries) != index.PackageCount {
+		issues = append(issues, "activation audit archive index package_count does not match entries")
+	}
+	if len(index.Entries) == 0 {
+		issues = append(issues, "activation audit archive index must include at least one entry")
+		return issues
+	}
+
+	seenPackagePaths := make(map[string]struct{}, len(index.Entries))
+	archiveReadyCount := 0
+	for _, entry := range index.Entries {
+		if _, exists := seenPackagePaths[entry.PackagePath]; exists {
+			issues = append(issues, fmt.Sprintf("activation audit archive index contains duplicate package_path: %s", entry.PackagePath))
+		} else {
+			seenPackagePaths[entry.PackagePath] = struct{}{}
+		}
+		if !entry.ArchiveReady {
+			issues = append(issues, fmt.Sprintf("activation audit archive index contains non-archive-ready entry for package_path: %s", entry.PackagePath))
+		}
+		if entry.Status != "consistent" {
+			issues = append(issues, fmt.Sprintf("activation audit archive index contains non-consistent entry for package_path: %s", entry.PackagePath))
+		}
+		if entry.ArchiveReady {
+			archiveReadyCount++
+		}
+	}
+	if archiveReadyCount != index.ArchiveReadyCount || archiveReadyCount != len(index.Entries) {
+		issues = append(issues, "activation audit archive index archive_ready_count mismatch")
+	}
+	latestEntry := index.Entries[len(index.Entries)-1]
+	if index.LatestCurrentPolicyVersion != latestEntry.CurrentPolicyVersion {
+		issues = append(issues, "activation audit archive index latest_current_policy_version mismatch")
+	}
+	if index.LatestCurrentPolicyDigest != latestEntry.CurrentPolicyDigest {
+		issues = append(issues, "activation audit archive index latest_current_policy_digest mismatch")
+	}
+	return issues
+}
+
 func archiveEntrySortKey(pkg SignerRotationActivationAuditExportPackage) string {
 	if pkg.BaselineSnapshot.LatestEntry != nil {
 		return pkg.BaselineSnapshot.LatestEntry.EffectiveAt + "|" + pkg.CurrentPolicy.Version
@@ -2841,29 +2897,12 @@ func BuildSignerRotationActivationAuditArchivePromotion(
 	if expectedVerification.Status != "consistent" || !expectedVerification.ArchiveReady {
 		result.Issues = append(result.Issues, "activation audit export package is not archive_ready")
 	}
-	if request.ArchiveIndex.Status != "consistent" {
-		result.Issues = append(result.Issues, fmt.Sprintf("activation audit archive index status must be consistent, got %s", request.ArchiveIndex.Status))
-	}
-	if request.ArchiveIndex.PackageCount != len(request.ArchiveIndex.Entries) {
-		result.Issues = append(result.Issues, "activation audit archive index package_count does not match entries")
-	}
-	if len(request.ArchiveIndex.Entries) == 0 {
-		result.Issues = append(result.Issues, "activation audit archive index must include at least one entry")
-	}
+	result.Issues = append(result.Issues, activationAuditArchiveIndexConsistencyIssues(request.ArchiveIndex)...)
 	if request.ArchiveIndex.ChainID != "" && request.ArchiveIndex.ChainID != expectedVerification.ChainID {
 		result.Issues = append(result.Issues, "activation audit archive index chain_id mismatch")
 	}
 	if request.ArchiveIndex.PolicyPath != "" && request.ArchiveIndex.PolicyPath != expectedVerification.PolicyPath {
 		result.Issues = append(result.Issues, "activation audit archive index policy_path mismatch")
-	}
-	if len(request.ArchiveIndex.Entries) > 0 {
-		latestEntry := request.ArchiveIndex.Entries[len(request.ArchiveIndex.Entries)-1]
-		if request.ArchiveIndex.LatestCurrentPolicyVersion != latestEntry.CurrentPolicyVersion {
-			result.Issues = append(result.Issues, "activation audit archive index latest_current_policy_version mismatch")
-		}
-		if request.ArchiveIndex.LatestCurrentPolicyDigest != latestEntry.CurrentPolicyDigest {
-			result.Issues = append(result.Issues, "activation audit archive index latest_current_policy_digest mismatch")
-		}
 	}
 
 	matchedIndex := -1
