@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet clean
 
 help:
 	@echo ""
@@ -19,6 +19,8 @@ help:
 	@echo "  governance-remediation Emit structured mitigation bundles for active trends"
 	@echo "  governance-replay Replay checkpoint event logs into deterministic current state"
 	@echo "  governance-drift Compare a proposal against governance history"
+	@echo "  governance-threat-scan Scan proposal for zero-day threats and vulnerabilities"
+	@echo "  governance-multi-model Run multi-model inference with routing"
 	@echo "  go-build         Build the 0aid binary"
 	@echo "  go-test          Run Go unit tests"
 	@echo "  module-plan      Render the first registry/attestation milestone plan"
@@ -80,6 +82,18 @@ governance-drift:
 	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)
 	@test -n "$(HISTORY)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)
 	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-drift --proposal $(PROPOSAL) --history $(HISTORY)
+
+governance-threat-scan:
+	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-threat-scan PROPOSAL=examples/proposals/emergency-pause.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-threat-scan --proposal $(PROPOSAL)
+
+governance-multi-model:
+	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-multi-model PROPOSAL=examples/proposals/emergency-pause.json [STRATEGY=consensus]" && exit 1)
+	@if [ -n "$(STRATEGY)" ]; then \
+		PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-multi-model --proposal $(PROPOSAL) --strategy $(STRATEGY); \
+	else \
+		PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-multi-model --proposal $(PROPOSAL); \
+	fi
 
 go-build:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) go build ./cmd/0aid
