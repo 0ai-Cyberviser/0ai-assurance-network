@@ -1,0 +1,133 @@
+{
+  "version": "threat-detection-2026-04-21",
+  "engine": "0ai-threat-detection-v1",
+  "enabled": true,
+  "vulnerability_patterns": {
+    "smart_contract": [
+      "reentrancy",
+      "integer overflow",
+      "underflow",
+      "unchecked call",
+      "delegatecall",
+      "selfdestruct",
+      "tx.origin",
+      "timestamp dependence"
+    ],
+    "governance_attack": [
+      "flash loan",
+      "voting manipulation",
+      "quorum bypass",
+      "timelock bypass",
+      "proposal spam",
+      "sybil attack",
+      "bribery"
+    ],
+    "economic_exploit": [
+      "arbitrage manipulation",
+      "oracle manipulation",
+      "front-running",
+      "sandwich attack",
+      "MEV extraction",
+      "liquidity drain"
+    ],
+    "infrastructure": [
+      "denial of service",
+      "network partition",
+      "eclipse attack",
+      "51% attack",
+      "long range attack"
+    ],
+    "data_integrity": [
+      "replay attack",
+      "signature forgery",
+      "hash collision",
+      "merkle tree manipulation",
+      "state bloat"
+    ]
+  },
+  "threat_weights": {
+    "smart_contract_vulnerability": 25,
+    "governance_attack_vector": 30,
+    "economic_exploit_pattern": 22,
+    "infrastructure_threat": 18,
+    "data_integrity_risk": 20,
+    "unpatched_dependency": 15,
+    "privilege_escalation": 28,
+    "authentication_bypass": 26
+  },
+  "threat_thresholds": {
+    "critical_threat_score": 50,
+    "high_threat_score": 30,
+    "elevated_threat_score": 15
+  },
+  "threat_classifications": {
+    "critical": {
+      "min_score": 50,
+      "required_security_review": true,
+      "block_execution": true,
+      "escalation_required": true
+    },
+    "high": {
+      "min_score": 30,
+      "required_security_review": true,
+      "block_execution": false,
+      "escalation_required": true
+    },
+    "elevated": {
+      "min_score": 15,
+      "required_security_review": true,
+      "block_execution": false,
+      "escalation_required": false
+    },
+    "low": {
+      "min_score": 0,
+      "required_security_review": false,
+      "block_execution": false,
+      "escalation_required": false
+    }
+  },
+  "detection_rules": {
+    "validator_set_changes": {
+      "patterns": ["validator", "staking", "unbonding", "consensus"],
+      "threat_categories": ["governance_attack", "infrastructure"],
+      "escalate_if_emergency": true
+    },
+    "treasury_operations": {
+      "patterns": ["treasury", "fund", "transfer", "withdraw"],
+      "threat_categories": ["economic_exploit", "governance_attack"],
+      "escalate_if_large_amount": true
+    },
+    "emergency_actions": {
+      "patterns": ["emergency", "pause", "halt", "freeze"],
+      "threat_categories": ["governance_attack"],
+      "always_review": true
+    },
+    "external_dependencies": {
+      "patterns": ["oracle", "bridge", "external", "third-party"],
+      "threat_categories": ["data_integrity", "economic_exploit"],
+      "check_dependency_audit": true
+    }
+  },
+  "remediation_templates": {
+    "critical": [
+      "Initiate immediate security incident response protocol.",
+      "Engage external security audit before proceeding.",
+      "Require multi-signature approval from security council.",
+      "Implement continuous monitoring for exploit attempts."
+    ],
+    "high": [
+      "Conduct thorough security review with documented threat model.",
+      "Require independent code review for implementation.",
+      "Add runtime monitoring and alerting for suspicious activity.",
+      "Prepare rollback plan with defined triggers."
+    ],
+    "elevated": [
+      "Document identified attack vectors and mitigation strategies.",
+      "Add test coverage for exploit scenarios.",
+      "Review with security-aware governance participants."
+    ],
+    "low": [
+      "Include security considerations in standard approval process."
+    ]
+  }
+}
