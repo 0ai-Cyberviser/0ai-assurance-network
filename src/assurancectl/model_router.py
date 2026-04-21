@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from .config import LoadedConfig
@@ -92,8 +91,9 @@ def select_routing_strategy(
         # Ensure minimum models for consensus
         min_models = strategy_config.get("min_models", 2)
         if len(selected_models) < min_models:
+            remaining_models = min_models - len(selected_models)
             selected_models.extend(
-                [m for m in fallback_chain if m not in selected_models][:min_models]
+                [m for m in fallback_chain if m not in selected_models][:remaining_models]
             )
 
     rationale = (

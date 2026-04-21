@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from .config import LoadedConfig
@@ -109,11 +108,19 @@ def infer_threat_detection(
 
         triggered_patterns.append(rule_name)
         threat_categories = rule_config.get("threat_categories", [])
+        threat_weight_keys = {
+            "infrastructure": "infrastructure_threat",
+            "data_integrity": "data_integrity_risk",
+            "economic_exploit": "economic_exploit_pattern",
+        }
 
         for threat_cat in threat_categories:
             if threat_cat not in attack_vectors:
                 attack_vectors.append(threat_cat)
-                weight_key = f"{threat_cat}_vector"
+                weight_key = threat_weight_keys.get(
+                    threat_cat,
+                    f"{threat_cat}_vector",
+                )
                 score += int(threat_weights.get(weight_key, 10))
                 rationale.append(
                     f"Detected {threat_cat} attack vector via {rule_name} pattern matching."

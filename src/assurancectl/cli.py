@@ -96,7 +96,7 @@ def _parser() -> argparse.ArgumentParser:
 
     multimodel = subparsers.add_parser("governance-multi-model", help="run multi-model inference with routing")
     multimodel.add_argument("--proposal", required=True, help="proposal JSON file path")
-    multimodel.add_argument("--strategy", help="routing strategy override (waterfall, consensus, hybrid)")
+    multimodel.add_argument("--strategy", help="routing strategy override (waterfall, consensus, hybrid, specialized)")
     multimodel.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     _add_artifact_argument(multimodel)
 

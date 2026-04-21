@@ -12,7 +12,7 @@ The threat detection system:
 - Detects known attack patterns (governance attacks, economic exploits, smart contract vulnerabilities)
 - Assigns threat levels and security remediation requirements
 - Integrates seamlessly with existing governance workflows
-- Maintains backward compatibility - it's opt-in and can be disabled
+- Maintains backward compatibility - it's enabled by default in this repository and can be disabled via configuration
 
 ## Threat Detection Engine
 

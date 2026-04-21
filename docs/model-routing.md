@@ -27,11 +27,11 @@ Try models in priority order with automatic fallback:
 
 ### Consensus
 
-Run multiple models and aggregate results via voting:
+Run multiple models and aggregate results via voting or comparison:
 
-- Executes 2+ models in parallel
+- Executes 2+ models and aggregates their outputs
 - Aggregates via weighted voting or most-conservative selection
-- Detects disagreements and conflicts
+- Detects disagreements and conflicts across model results
 - **Use case**: Safety-critical proposals, high-stakes decisions
 - **Configuration**: Requires `consensus_threshold` (e.g., 0.67 = 67% agreement)
 
@@ -104,12 +104,12 @@ Each model provides:
 
 ### Health Checking
 
-The registry tracks model health:
+The registry tracks model health, but periodic execution must be triggered by the caller or an external scheduler:
 
-- Periodic health checks (default: every 60 seconds)
+- Health checks should be run periodically (recommended default: every 60 seconds)
 - Failure threshold (default: 3 consecutive failures)
 - Recovery cooldown (default: 300 seconds)
-- Automatic unavailability marking
+- Automatic unavailability marking after failed checks
 
 ## Usage
 
