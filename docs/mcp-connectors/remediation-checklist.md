@@ -86,21 +86,36 @@ ALLOWED_REVIEW_STATES: frozenset[str] = frozenset([
 
 ### ✅ Fix #34: Issue Comment Reaction Readback
 
-**File:** (GitHub MCP connector reaction handlers)
+**File:** `src/assurancectl/github_mcp.py`
+
+**Root Cause:** The read path was using the issue-level endpoint
+`/issues/{number}/reactions` instead of the comment-level endpoint
+`/issues/comments/{comment_id}/reactions`.  GitHub silently scopes
+the query and returns an empty list, causing the connector to miss
+reactions that were just created.
 
 **Change:**
-```python
-# Compare with working PR reaction path
-# Fix endpoint, pagination, or normalization
-# Ensure issue-comment reactions use correct API endpoint
+```diff
+-# WRONG – returns reactions on the issue, not the comment
+-path = f"/repos/{owner}/{repo}/issues/{issue_number}/reactions"
+
++# CORRECT – returns reactions on the specific comment
++path = f"/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions"
 ```
+
+A shared `_normalize_reaction` function is used by both the issue-comment
+and PR reaction paths so the output shape is guaranteed to be identical.
+
+**Tests:** `tests/test_github_mcp.py`
 
 **Validate:**
 ```bash
-# Create issue comment
-# Add reaction
-# Read reactions
-# Verify reaction appears
+python -m unittest tests/test_github_mcp.py -v
+# Expected: 15 tests pass, including:
+#   test_calls_issue_comment_reactions_endpoint
+#   test_does_not_call_issue_level_endpoint
+#   test_immediately_readable_after_creation
+#   test_issue_comment_and_pr_reactions_share_normalizer
 ```
 
 ---
@@ -243,7 +258,7 @@ gh pr close <pr-number>
 | #33 | GitHub MCP | Medium | ✅ Fixed |
 | #32 | GitHub MCP | High | ✅ Fixed |
 | #33 | GitHub MCP | Medium | ⏳ Pending |
-| #34 | GitHub MCP | Medium | ⏳ Pending |
+| #34 | GitHub MCP | Medium | ✅ Fixed |
 | #36 | GitHub MCP | Low | ⏳ Pending |
 | #35 | Canva MCP | Medium | ✅ Fixed |
 
