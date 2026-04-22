@@ -21,6 +21,25 @@
       "description": "Emergency security and incident response reserve"
     }
   },
+  "allocation_consistency": {
+    "source_of_truth": {
+      "file": "config/genesis/base-genesis.json",
+      "json_path": "treasury.fee_split_percent"
+    },
+    "bucket_mapping": {
+      "validator_rewards": "validator_rewards",
+      "treasury_grants": "treasury_grants",
+      "development_fund": "development_fund",
+      "security_reserve": "security_reserve"
+    },
+    "expected_fee_split_percent": {
+      "validator_rewards": 40.0,
+      "treasury_grants": 30.0,
+      "development_fund": 20.0,
+      "security_reserve": 10.0
+    },
+    "validation_required": true
+  },
   "allocation_strategy": "proportional",
   "treasury_address": "0ai-treasury-main",
   "initial_validator_stake": 100000,
