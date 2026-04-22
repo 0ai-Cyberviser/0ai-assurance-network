@@ -72,7 +72,7 @@ GraphQL schema mismatch - `PullRequest` type exposes `url` field, not `htmlUrl`.
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#32
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** High - Breaks review lifecycle management
 
@@ -115,7 +115,7 @@ Internal translation layer that converts numeric ID to node ID before dismissing
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#33
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** Medium - Read path trust failure
 
@@ -161,7 +161,7 @@ Likely filtering or normalization logic that excludes `COMMENTED` review state.
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#34
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** Medium - Read path trust failure
 
@@ -176,18 +176,33 @@ Likely filtering or normalization logic that excludes `COMMENTED` review state.
 Newly created reactions should appear in the readback immediately.
 
 **Root Cause:**
-Possible issues:
-- Wrong API endpoint for reading issue comment reactions
-- Pagination problem (reaction on later page)
-- Normalization strips the reaction
-- Eventual consistency issue (unlikely for same-session reads)
+``get_issue_comment_reactions`` was routing to the issue-level endpoint
+``/repos/{owner}/{repo}/issues/{number}/reactions`` instead of the
+comment-level endpoint
+``/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions``.  GitHub
+silently scopes the query and returns an empty list when there are no
+issue-level reactions, even when the comment itself has reactions.
 
-**Required Fix:**
-1. Compare issue-comment reaction fetch with PR reaction fetch (proven working)
-2. Verify endpoint selection (issue comment reactions vs PR reactions)
-3. Check pagination parameters
-4. Validate payload normalization
-5. Ensure reaction creation and readback use compatible scoping
+**Fix Applied:**
+File: ``src/assurancectl/github_mcp.py``
+
+```python
+# WRONG (returns empty list for comment reactions):
+path = f"/repos/{owner}/{repo}/issues/{issue_number}/reactions"
+
+# CORRECT:
+path = f"/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions"
+```
+
+The module also shares a single ``_normalize_reaction`` function between the
+issue-comment and PR reaction paths, guaranteeing identical output shape and
+eliminating any future normalisation divergence.
+
+**Tests:** ``tests/test_github_mcp.py``
+- ``TestGetIssueCommentReactions.test_calls_issue_comment_reactions_endpoint``
+- ``TestGetIssueCommentReactions.test_does_not_call_issue_level_endpoint``
+- ``TestGetIssueCommentReactions.test_immediately_readable_after_creation``
+- ``TestGetPrReactions.test_issue_comment_and_pr_reactions_share_normalizer``
 
 **Validation Plan:**
 1. Create a disposable issue comment
@@ -252,7 +267,7 @@ if pr.head_repo != pr.base_repo:  # Cross-repo PR
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#35
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** Medium - Read path trust failure
 
@@ -279,6 +294,20 @@ Possible causes:
 3. Add retry logic with exponential backoff if eventual consistency is expected
 4. Validate folder ID used in both upload and listing
 5. Check pagination parameters in listing
+
+**Root Cause (confirmed):**
+Canva's backend has an eventual-consistency window for newly uploaded assets.
+An upload job that returns success and a valid asset ID may not be immediately
+visible in the Uploads folder listing.  The fix adds:
+
+- `verify_upload` – retries `list_folder_items` with exponential backoff
+  (up to 3 attempts; delays of 2 s, 4 s) until the asset appears.
+- `list_all_folder_items` – follows pagination continuation tokens to
+  guarantee the full listing is returned (partial pagination was a secondary
+  suspected cause).
+
+**Implementation:** `src/assurancectl/canva_connector.py`
+**Tests:** `tests/test_canva_connector.py`
 
 **Validation Plan:**
 1. Upload a test asset to Canva
@@ -479,20 +508,24 @@ Use clear prefixes for disposable resources:
 
 - [ ] Fix #31: Update GraphQL mutation for ready-for-review
 - [ ] Fix #32: Return compatible review IDs
+- [x] Fix #33: Include COMMENTED reviews in listing
+- [x] Fix #32: Return compatible review IDs
 - [ ] Fix #33: Include COMMENTED reviews in listing
 - [ ] Fix #34: Fix issue-comment reaction readback
 - [x] Fix #36: Suppress maintainer_can_modify for same-repo PRs
+- [x] Fix #34: Fix issue-comment reaction readback
+- [ ] Fix #36: Suppress maintainer_can_modify for same-repo PRs
 - [ ] Run end-to-end validation sequence
 - [ ] Document any API quirks or edge cases found
 - [ ] Update connector documentation
 
 ### Canva MCP Connector
 
-- [ ] Fix #35: Investigate and fix asset upload reflection
-- [ ] Document eventual consistency behavior if applicable
-- [ ] Add retry logic if needed
-- [ ] Validate folder scoping
-- [ ] Update connector documentation
+- [x] Fix #35: Investigate and fix asset upload reflection
+- [x] Document eventual consistency behavior if applicable
+- [x] Add retry logic if needed
+- [x] Validate folder scoping
+- [x] Update connector documentation
 
 ### Final Verification
 
