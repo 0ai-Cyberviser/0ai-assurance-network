@@ -102,18 +102,23 @@ ALLOWED_STATES = [
 
 ### ✅ Fix #36: Same-Repo PR Update Guard
 
-**File:** (GitHub MCP connector PR update)
+**File:** `src/github_mcp/pull_requests.py`
 
 **Change:**
 ```diff
-def update_pull_request(pr, updates):
-  payload = {...}
+def build_update_payload(pr, updates):
+  payload = {}
 
-+ # Only include for cross-repo PRs
-+ if pr.head.repo.id != pr.base.repo.id:
-    payload["maintainer_can_modify"] = updates.get("maintainer_can_modify")
++ # Only include maintainer_can_modify for cross-repo (fork) PRs.
++ # GitHub returns HTTP 422 if this field is sent for same-repo PRs.
+  for key, value in updates.items():
++   if key == "maintainer_can_modify":
++     if is_cross_repo_pr(pr):
++       payload[key] = value
++   else:
+      payload[key] = value
 
-  return github.patch(f"/pulls/{pr.number}", payload)
+  return payload
 ```
 
 **Validate:**
@@ -214,7 +219,7 @@ gh pr close <pr-number>
 | #32 | GitHub MCP | High | ⏳ Pending |
 | #33 | GitHub MCP | Medium | ⏳ Pending |
 | #34 | GitHub MCP | Medium | ⏳ Pending |
-| #36 | GitHub MCP | Low | ⏳ Pending |
+| #36 | GitHub MCP | Low | ✅ Fixed |
 | #35 | Canva MCP | Medium | ⏳ Pending |
 
 **Legend:**
