@@ -113,10 +113,10 @@ internally consistent.
 `readiness` scores the current launch posture and calls out blockers before the
 project pretends it is closer to launch than it really is.
 
-`funding-deploy` validates and deploys the blockchain funding configuration,
-including treasury allocation, validator funding, and grant distribution
-mechanisms. It generates deployment artifacts that specify funding pool
-allocations and validator stake amounts.
+`funding-deploy` validates the blockchain funding configuration and generates
+deployment artifacts for treasury allocation, validator funding, and grant
+distribution mechanisms. It does not perform on-chain deployment today; the
+generated artifacts specify funding pool allocations and validator stake amounts.
 
 `funding-validate` performs a dry-run validation of the funding configuration
 without deploying, checking that allocation percentages sum to 100%, all
