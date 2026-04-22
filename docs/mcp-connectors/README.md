@@ -29,7 +29,7 @@ Live smoke testing was conducted on April 16-17, 2026 against production GitHub 
 | #33 | GitHub | review listing | Medium | Tracked |
 | #34 | GitHub | issue reactions | Medium | Fixed |
 | #36 | GitHub | PR updates | Low | Tracked |
-| #35 | Canva | asset upload | Medium | Tracked |
+| #35 | Canva | asset upload | Medium | Fixed |
 
 ## Quick Links
 

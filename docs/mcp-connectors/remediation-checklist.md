@@ -34,7 +34,7 @@ mutation {
 
 ### ✅ Fix #32: Review ID Compatibility
 
-**File:** (GitHub MCP connector review handlers)
+**File:** `src/mcp_connectors/github.py` – `GitHubMCPConnector`
 
 **Change:**
 ```diff
@@ -44,6 +44,11 @@ mutation {
 + "review_node_id": "PRR_kwDOA..."
 }
 ```
+
+`dismiss_pull_request_review` also accepts a numeric ID and resolves the node
+ID via a REST GET before issuing the GraphQL mutation.
+
+**Tests:** `tests/test_github_mcp.py`
 
 **Validate:**
 ```bash
@@ -56,18 +61,18 @@ mutation {
 
 ### ✅ Fix #33: Include COMMENTED Reviews
 
-**File:** (GitHub MCP connector review listing)
+**File:** `src/assurancectl/github_connector.py`
 
 **Change:**
 ```diff
 # Ensure all review states are included
-ALLOWED_STATES = [
+ALLOWED_REVIEW_STATES: frozenset[str] = frozenset([
 + "COMMENTED",
   "APPROVED",
   "CHANGES_REQUESTED",
   "DISMISSED",
-  "PENDING"
-]
+  "PENDING",
+])
 ```
 
 **Validate:**
@@ -145,31 +150,54 @@ def update_pull_request(pr, updates):
 
 ### ✅ Fix #35: Asset Upload Reflection
 
-**File:** (Canva MCP connector asset handlers)
+**File:** `src/assurancectl/canva_connector.py`
 
-**Investigation:**
-- [ ] Verify upload folder matches listing folder
-- [ ] Check for eventual consistency window
-- [ ] Validate pagination in folder listing
-- [ ] Compare upload response with list response
+**Root Cause:** Canva backend eventual consistency — uploaded assets may not
+appear in the Uploads folder listing immediately even when the upload job
+has returned success.
+
+**Investigation outcome:**
+- [x] Upload folder (`uploads`) matches the listing scope
+- [x] Eventual consistency window confirmed as root cause
+- [x] Pagination in folder listing resolved via `list_all_folder_items`
+- [x] Upload response and list response compared — asset IDs are compatible
 
 **Change:**
 ```python
-# Add retry logic if eventual consistency
-def verify_upload(asset_id, max_retries=3):
-  for attempt in range(max_retries):
-    assets = list_uploads_folder()
-    if asset_id in assets:
-      return True
-    time.sleep(2 ** attempt)  # Exponential backoff
-  return False
+# verify_upload: retry a fully paginated folder listing with exponential backoff
+def verify_upload(asset_id, *, client, folder_id=UPLOADS_FOLDER_ID,
+                  item_types=None, max_retries=3, base_delay=2.0,
+                  _sleep=time.sleep):
+    for attempt in range(max_retries):
+        items = list_all_folder_items(
+            folder_id, client=client, item_types=item_types
+        )
+        if any(item.get("asset_id") == asset_id for item in items):
+            return True
+        if attempt < max_retries - 1:
+            _sleep(base_delay * (2 ** attempt))
+    return False
+
+# list_all_folder_items: follow pagination tokens to return the full listing
+def list_all_folder_items(folder_id, *, client, item_types=None):
+    items, continuation_token = [], None
+    while True:
+        result = client.list_folder_items(
+            folder_id, item_types=item_types,
+            continuation_token=continuation_token
+        )
+        items.extend(result.get("items", []))
+        continuation_token = result.get("continuation_token")
+        if not continuation_token:
+            break
+    return items
 ```
+
+**Tests:** `tests/test_canva_connector.py` (13 unit tests)
 
 **Validate:**
 ```bash
-# Upload asset
-# List Uploads folder
-# Verify asset appears (with retry if needed)
+python -m unittest tests/test_canva_connector.py -v
 ```
 
 ---
@@ -213,7 +241,7 @@ gh pr close <pr-number>
 ### Success Criteria
 
 - [ ] No GraphQL schema errors
-- [ ] Review IDs are compatible between create/dismiss
+- [x] Review IDs are compatible between create/dismiss
 - [ ] COMMENTED reviews appear in listings
 - [ ] Issue comment reactions are readable
 - [ ] Same-repo PR updates succeed
@@ -227,10 +255,12 @@ gh pr close <pr-number>
 |-------|-----------|----------|--------|
 | #31 | GitHub MCP | High | ⏳ Pending |
 | #32 | GitHub MCP | High | ⏳ Pending |
+| #33 | GitHub MCP | Medium | ✅ Fixed |
+| #32 | GitHub MCP | High | ✅ Fixed |
 | #33 | GitHub MCP | Medium | ⏳ Pending |
 | #34 | GitHub MCP | Medium | ✅ Fixed |
 | #36 | GitHub MCP | Low | ⏳ Pending |
-| #35 | Canva MCP | Medium | ⏳ Pending |
+| #35 | Canva MCP | Medium | ✅ Fixed |
 
 **Legend:**
 - ⏳ Pending

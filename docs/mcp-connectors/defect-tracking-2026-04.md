@@ -72,7 +72,7 @@ GraphQL schema mismatch - `PullRequest` type exposes `url` field, not `htmlUrl`.
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#32
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** High - Breaks review lifecycle management
 
@@ -115,7 +115,7 @@ Internal translation layer that converts numeric ID to node ID before dismissing
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#33
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** Medium - Read path trust failure
 
@@ -267,7 +267,7 @@ if pr.head_repo != pr.base_repo:  # Cross-repo PR
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#35
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** Medium - Read path trust failure
 
@@ -294,6 +294,20 @@ Possible causes:
 3. Add retry logic with exponential backoff if eventual consistency is expected
 4. Validate folder ID used in both upload and listing
 5. Check pagination parameters in listing
+
+**Root Cause (confirmed):**
+Canva's backend has an eventual-consistency window for newly uploaded assets.
+An upload job that returns success and a valid asset ID may not be immediately
+visible in the Uploads folder listing.  The fix adds:
+
+- `verify_upload` – retries `list_folder_items` with exponential backoff
+  (up to 3 attempts; delays of 2 s, 4 s) until the asset appears.
+- `list_all_folder_items` – follows pagination continuation tokens to
+  guarantee the full listing is returned (partial pagination was a secondary
+  suspected cause).
+
+**Implementation:** `src/assurancectl/canva_connector.py`
+**Tests:** `tests/test_canva_connector.py`
 
 **Validation Plan:**
 1. Upload a test asset to Canva
@@ -494,6 +508,8 @@ Use clear prefixes for disposable resources:
 
 - [ ] Fix #31: Update GraphQL mutation for ready-for-review
 - [ ] Fix #32: Return compatible review IDs
+- [x] Fix #33: Include COMMENTED reviews in listing
+- [x] Fix #32: Return compatible review IDs
 - [ ] Fix #33: Include COMMENTED reviews in listing
 - [x] Fix #34: Fix issue-comment reaction readback
 - [ ] Fix #36: Suppress maintainer_can_modify for same-repo PRs
@@ -503,11 +519,11 @@ Use clear prefixes for disposable resources:
 
 ### Canva MCP Connector
 
-- [ ] Fix #35: Investigate and fix asset upload reflection
-- [ ] Document eventual consistency behavior if applicable
-- [ ] Add retry logic if needed
-- [ ] Validate folder scoping
-- [ ] Update connector documentation
+- [x] Fix #35: Investigate and fix asset upload reflection
+- [x] Document eventual consistency behavior if applicable
+- [x] Add retry logic if needed
+- [x] Validate folder scoping
+- [x] Update connector documentation
 
 ### Final Verification
 

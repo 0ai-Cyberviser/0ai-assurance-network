@@ -187,6 +187,10 @@ signer-rotation-ledger-retained-inventory:
 	@test -n "$(VERIFICATION_RECEIPTS)" || (echo "Usage: make signer-rotation-ledger-retained-inventory PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json" && exit 1)
 	./0aid signer-rotation-ledger-retained-inventory --promotions $(PROMOTIONS) --verification-receipts $(VERIFICATION_RECEIPTS) $(if $(OUT),--out $(OUT),)
 
+signer-rotation-ledger-continuity-manifest:
+	@test -n "$(SNAPSHOTS)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest SNAPSHOTS=build/rotation/retained-archive-inventory.json" && exit 1)
+	./0aid signer-rotation-ledger-continuity-manifest --snapshots $(SNAPSHOTS) $(if $(OUT),--out $(OUT),)
+
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
 	./0aid init-node --root . --id $(ID) --out ./build/nodes/$(ID)
