@@ -56,18 +56,18 @@ mutation {
 
 ### ✅ Fix #33: Include COMMENTED Reviews
 
-**File:** (GitHub MCP connector review listing)
+**File:** `src/assurancectl/github_connector.py`
 
 **Change:**
 ```diff
 # Ensure all review states are included
-ALLOWED_STATES = [
+ALLOWED_REVIEW_STATES: frozenset[str] = frozenset([
 + "COMMENTED",
   "APPROVED",
   "CHANGES_REQUESTED",
   "DISMISSED",
-  "PENDING"
-]
+  "PENDING",
+])
 ```
 
 **Validate:**
@@ -212,7 +212,7 @@ gh pr close <pr-number>
 |-------|-----------|----------|--------|
 | #31 | GitHub MCP | High | ⏳ Pending |
 | #32 | GitHub MCP | High | ⏳ Pending |
-| #33 | GitHub MCP | Medium | ⏳ Pending |
+| #33 | GitHub MCP | Medium | ✅ Fixed |
 | #34 | GitHub MCP | Medium | ⏳ Pending |
 | #36 | GitHub MCP | Low | ⏳ Pending |
 | #35 | Canva MCP | Medium | ⏳ Pending |

@@ -115,7 +115,7 @@ Internal translation layer that converts numeric ID to node ID before dismissing
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#33
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** Medium - Read path trust failure
 
@@ -479,7 +479,7 @@ Use clear prefixes for disposable resources:
 
 - [ ] Fix #31: Update GraphQL mutation for ready-for-review
 - [ ] Fix #32: Return compatible review IDs
-- [ ] Fix #33: Include COMMENTED reviews in listing
+- [x] Fix #33: Include COMMENTED reviews in listing
 - [ ] Fix #34: Fix issue-comment reaction readback
 - [ ] Fix #36: Suppress maintainer_can_modify for same-repo PRs
 - [ ] Run end-to-end validation sequence
