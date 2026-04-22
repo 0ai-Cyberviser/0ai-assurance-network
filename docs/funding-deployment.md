@@ -90,10 +90,10 @@ make funding-deploy FUNDING_CONFIG=config/governance/funding-config.json OUT=bui
 ```
 
 This creates a deployment configuration that includes:
-- Network metadata
+- Network metadata derived from the repository configuration
 - Validator funding allocations
 - Pool configurations
-- Genesis time and network ID
+- Chain/network identifiers such as `chain_id` where available
 
 ### 3. Deploy to Blockchain
 
