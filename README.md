@@ -90,6 +90,8 @@ make -C projects/0ai-assurance-network signer-rotation-ledger-archive-index EXPO
 make -C projects/0ai-assurance-network signer-rotation-ledger-promote EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTED_AT=2026-04-24T00:20:00Z PROMOTED_BY=governance-archive-bot OUT=build/rotation/governance-chair-archive-promotion.json RECEIPT_OUT=build/rotation/governance-chair-archive-promotion-receipt.json ATTESTATION_OUT=build/rotation/governance-chair-retained-baseline-attestation.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-verify-promotion EXPORT=build/rotation/governance-chair-audit-export.json VERIFY=build/rotation/governance-chair-audit-export-verify.json INDEX=build/rotation/activation-audit-archive-index.json PROMOTION=build/rotation/governance-chair-archive-promotion.json VERIFIED_AT=2026-04-24T00:25:00Z VERIFIED_BY=governance-audit-bot OUT=build/rotation/governance-chair-archive-verification.json
 make -C projects/0ai-assurance-network signer-rotation-ledger-retained-inventory PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json OUT=build/rotation/retained-archive-inventory.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-verify-inventory INVENTORY=build/rotation/retained-archive-inventory.json PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json VERIFIED_AT=2026-04-24T00:30:00Z VERIFIED_BY=governance-audit-bot OUT=build/rotation/retained-archive-inventory-verification.json
+make -C projects/0ai-assurance-network signer-rotation-ledger-continuity-manifest INVENTORIES=build/rotation/retained-archive-inventory.json INVENTORY_VERIFICATIONS=build/rotation/retained-archive-inventory-verification.json OUT=build/rotation/retained-archive-continuity-manifest.json
 make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
@@ -288,6 +290,16 @@ snapshot over one or more verified promoted baselines. It fails closed when
 verification receipts drift from the promoted receipt/attestation lineage or
 when retained entries collide on policy version, receipt id, or attestation id.
 
+`signer-rotation-ledger-verify-inventory` independently rebuilds a retained
+inventory snapshot from the promoted-baseline artifacts and emits a deterministic
+verification receipt. It fails closed when the snapshot drifts from the
+promotion and verification receipt lineage.
+
+`signer-rotation-ledger-continuity-manifest` builds a continuity manifest over
+verified retained inventory snapshots. It fails closed when inventory
+verification receipts do not match their snapshots, when history drops a
+previously retained promotion receipt, or when chain/policy metadata changes.
+
 The generated compose file assumes a future `0aid` chain binary packaged in a
 container image. It is intentionally parameterized so the image and binary path
 can change without rewriting topology data.
@@ -314,6 +326,8 @@ currently supports:
 - `signer-rotation-ledger-promote`
 - `signer-rotation-ledger-verify-promotion`
 - `signer-rotation-ledger-retained-inventory`
+- `signer-rotation-ledger-verify-inventory`
+- `signer-rotation-ledger-continuity-manifest`
 - `show-plan`
 - `init-genesis`
 - `render-validator`

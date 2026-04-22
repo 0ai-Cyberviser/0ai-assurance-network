@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -145,12 +146,16 @@ class AssuranceCtlTests(unittest.TestCase):
         self.assertIn("skeleton config: OK", result.stdout)
 
     def test_render_localnet_creates_artifacts(self) -> None:
-        result = self.run_cli("render-localnet")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        build = PROJECT_ROOT / "build" / "localnet"
-        self.assertTrue((build / "docker-compose.yml").exists())
-        self.assertTrue((build / "network-summary.json").exists())
-        self.assertTrue((build / "genesis.rendered.json").exists())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            shutil.copytree(PROJECT_ROOT / "config", root / "config")
+
+            result = self.run_cli("--root", str(root), "render-localnet")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            build = root / "build" / "localnet"
+            self.assertTrue((build / "docker-compose.yml").exists())
+            self.assertTrue((build / "network-summary.json").exists())
+            self.assertTrue((build / "genesis.rendered.json").exists())
 
     def test_readiness_report_json(self) -> None:
         result = self.run_cli("readiness-report", "--json")
