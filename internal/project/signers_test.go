@@ -1619,3 +1619,194 @@ func TestSignerRotationActivationAuditRetainedInventorySnapshotFlagsReceiptMisma
 		t.Fatalf("expected retained inventory digest mismatch issue, got %+v", snapshot.Issues)
 	}
 }
+
+func mustRetainedInventorySnapshot(t *testing.T, bundle Bundle) SignerRotationActivationAuditRetainedInventorySnapshot {
+	t.Helper()
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	verification, err := SignerRotationActivationAuditVerifyExport(SignerRotationActivationAuditExportVerificationRequest{
+		ExportPackage: rotatedExport,
+	})
+	if err != nil {
+		t.Fatalf("SignerRotationActivationAuditVerifyExport failed: %v", err)
+	}
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	promotion, err := BuildSignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotedAt:         "2026-04-24T00:20:00Z",
+		PromotedBy:         "governance-archive-bot",
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	receipt, err := VerifySignerRotationActivationAuditArchivePromotion(SignerRotationActivationAuditArchivePromotionVerificationRequest{
+		PackagePath:        "build/rotation/governance-chair-audit-export.json",
+		ExportPackage:      rotatedExport,
+		VerificationReport: verification,
+		ArchiveIndex:       index,
+		PromotionResult:    promotion,
+		VerifiedAt:         "2026-04-24T00:25:00Z",
+		VerifiedBy:         "governance-audit-bot",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignerRotationActivationAuditArchivePromotion failed: %v", err)
+	}
+	snapshot, err := BuildSignerRotationActivationAuditRetainedInventorySnapshot(SignerRotationActivationAuditRetainedInventorySnapshotRequest{
+		Packages: []SignerRotationActivationAuditRetainedInventoryPackage{
+			{
+				PromotionPath:       "build/rotation/governance-chair-archive-promotion.json",
+				PromotionResult:     promotion,
+				VerificationReceipt: receipt,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventorySnapshot failed: %v", err)
+	}
+	return snapshot
+}
+
+func TestSignerRotationActivationAuditRetainedInventorySnapshotReceiptID(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+	snapshot := mustRetainedInventorySnapshot(t, bundle)
+	if snapshot.Status != "consistent" {
+		t.Fatalf("expected consistent snapshot, got %s", snapshot.Status)
+	}
+	if snapshot.SnapshotReceiptID == "" {
+		t.Fatal("expected non-empty snapshot_receipt_id for consistent snapshot")
+	}
+	if !strings.HasPrefix(snapshot.SnapshotReceiptID, "retained-inventory-snapshot-") {
+		t.Fatalf("unexpected snapshot_receipt_id prefix: %s", snapshot.SnapshotReceiptID)
+	}
+	// Receipt ID must be deterministic: rebuild and compare
+	snapshot2 := mustRetainedInventorySnapshot(t, bundle)
+	if snapshot.SnapshotReceiptID != snapshot2.SnapshotReceiptID {
+		t.Fatalf("snapshot_receipt_id is not deterministic: %s vs %s", snapshot.SnapshotReceiptID, snapshot2.SnapshotReceiptID)
+	}
+}
+
+func TestSignerRotationActivationAuditRetainedInventoryContinuityManifest(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+	snapshot := mustRetainedInventorySnapshot(t, bundle)
+	if snapshot.Status != "consistent" {
+		t.Fatalf("expected consistent snapshot, got %s", snapshot.Status)
+	}
+
+	manifest, err := BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(SignerRotationActivationAuditRetainedInventoryContinuityRequest{
+		Snapshots: []SignerRotationActivationAuditRetainedInventorySnapshot{snapshot},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest failed: %v", err)
+	}
+	if manifest.Status != "continuous" {
+		t.Fatalf("expected continuous status, got %s: %v", manifest.Status, manifest.Issues)
+	}
+	if manifest.ManifestID == "" {
+		t.Fatal("expected non-empty manifest_id for continuous manifest")
+	}
+	if !strings.HasPrefix(manifest.ManifestID, "retained-inventory-continuity-") {
+		t.Fatalf("unexpected manifest_id prefix: %s", manifest.ManifestID)
+	}
+	if manifest.SnapshotCount != 1 {
+		t.Fatalf("expected snapshot_count=1, got %d", manifest.SnapshotCount)
+	}
+	if manifest.LatestCurrentPolicyVersion != snapshot.LatestCurrentPolicyVersion {
+		t.Fatalf("unexpected latest policy version: %s", manifest.LatestCurrentPolicyVersion)
+	}
+}
+
+func TestSignerRotationActivationAuditRetainedInventoryContinuityManifestFlagsDriftStatus(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+	snapshot := mustRetainedInventorySnapshot(t, bundle)
+
+	// Mutate snapshot to simulate drift: mark it as invalid
+	drifted := snapshot
+	drifted.Status = "invalid"
+	drifted.SnapshotReceiptID = ""
+
+	manifest, err := BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(SignerRotationActivationAuditRetainedInventoryContinuityRequest{
+		Snapshots: []SignerRotationActivationAuditRetainedInventorySnapshot{drifted},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest failed: %v", err)
+	}
+	if manifest.Status != "invalid" {
+		t.Fatalf("expected invalid manifest status, got %s", manifest.Status)
+	}
+	if manifest.ManifestID != "" {
+		t.Fatalf("expected empty manifest_id for invalid manifest, got %s", manifest.ManifestID)
+	}
+	joined := strings.Join(manifest.Issues, " | ")
+	if !strings.Contains(joined, "status must be consistent") {
+		t.Fatalf("expected status issue, got %v", manifest.Issues)
+	}
+}
+
+func TestSignerRotationActivationAuditRetainedInventoryContinuityManifestFlagsDuplicateReceiptID(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+	snapshot := mustRetainedInventorySnapshot(t, bundle)
+
+	manifest, err := BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(SignerRotationActivationAuditRetainedInventoryContinuityRequest{
+		Snapshots: []SignerRotationActivationAuditRetainedInventorySnapshot{snapshot, snapshot},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest failed: %v", err)
+	}
+	if manifest.Status != "invalid" {
+		t.Fatalf("expected invalid manifest status for duplicate receipt IDs, got %s", manifest.Status)
+	}
+	joined := strings.Join(manifest.Issues, " | ")
+	if !strings.Contains(joined, "duplicate snapshot_receipt_id") {
+		t.Fatalf("expected duplicate receipt ID issue, got %v", manifest.Issues)
+	}
+}
+
+func TestSignerRotationActivationAuditRetainedInventoryContinuityManifestFlagsVerifiedCountRegression(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+	snapshot := mustRetainedInventorySnapshot(t, bundle)
+
+	// Simulate a later snapshot that has fewer verified entries (regression)
+	later := snapshot
+	later.SnapshotReceiptID = "retained-inventory-snapshot-aabbccddeeff0011"
+	later.VerifiedCount = 0
+
+	manifest, err := BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(SignerRotationActivationAuditRetainedInventoryContinuityRequest{
+		Snapshots: []SignerRotationActivationAuditRetainedInventorySnapshot{snapshot, later},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest failed: %v", err)
+	}
+	if manifest.Status != "invalid" {
+		t.Fatalf("expected invalid manifest status for verified_count regression, got %s", manifest.Status)
+	}
+	joined := strings.Join(manifest.Issues, " | ")
+	if !strings.Contains(joined, "verified_count regressed") {
+		t.Fatalf("expected verified_count regression issue, got %v", manifest.Issues)
+	}
+}
