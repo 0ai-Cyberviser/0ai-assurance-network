@@ -99,13 +99,11 @@ def generate_funding_deployment(
     """
     # Load dependent configs
     topology = load_network_topology(root)
-    genesis = load_genesis_config(root)
 
     # Build deployment configuration
     deployment = {
         "deployment_version": "1.0.0",
         "network_id": topology.get("network_id", "0ai-testnet"),
-        "genesis_time": genesis.get("genesis_time"),
         "funding_config": funding_config,
         "validators": [],
     }
