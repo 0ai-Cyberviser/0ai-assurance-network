@@ -641,6 +641,17 @@ class TestAddReviewToPr(unittest.TestCase):
         self.assertIn("review_id", result)
         self.assertIn("review_node_id", result)
 
+    def test_normalises_other_fields(self) -> None:
+        connector = _make_connector()
+        with patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW):
+            result = connector.add_review_to_pr(
+                owner="owner", repo="repo", pull_number=1, body="Looks good!", event="APPROVE"
+            )
+        self.assertEqual(result["state"], _SAMPLE_REST_REVIEW["state"])
+        self.assertEqual(result["user"], _SAMPLE_REST_REVIEW["user"]["login"])
+        self.assertEqual(result["body"], _SAMPLE_REST_REVIEW["body"])
+        self.assertEqual(result["submitted_at"], _SAMPLE_REST_REVIEW["submitted_at"])
+
     def test_api_error_propagates(self) -> None:
         connector = _make_connector()
         with patch(
@@ -732,6 +743,24 @@ class TestDismissPullRequestReview(unittest.TestCase):
             result = connector.dismiss_pull_request_review(
                 owner="owner", repo="repo", pull_number=1,
                 review_id=NUMERIC_REVIEW_ID, message="Dismissed via numeric ID."
+            )
+        mock_rest.assert_called_once()
+        rest_args, _ = mock_rest.call_args
+        self.assertEqual(rest_args[0], "GET")
+        self.assertIn(str(NUMERIC_REVIEW_ID), rest_args[1])
+        mock_gql.assert_called_once()
+        gql_args, _ = mock_gql.call_args
+        self.assertEqual(gql_args[1]["reviewId"], NODE_REVIEW_ID)
+        self.assertEqual(result["state"], "DISMISSED")
+
+    def test_dismiss_with_string_numeric_id_resolves_node_id(self) -> None:
+        connector = _make_connector()
+        dismiss_data = _SAMPLE_GRAPHQL_DISMISS_RESPONSE["data"]
+        with patch("mcp_connectors.github._graphql_request", return_value=dismiss_data) as mock_gql, \
+             patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW) as mock_rest:
+            result = connector.dismiss_pull_request_review(
+                owner="owner", repo="repo", pull_number=1,
+                review_id=str(NUMERIC_REVIEW_ID), message="Dismissed via string numeric ID."
             )
         mock_rest.assert_called_once()
         rest_args, _ = mock_rest.call_args
