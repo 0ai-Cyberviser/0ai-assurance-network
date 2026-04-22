@@ -38,8 +38,11 @@ def build_update_payload(pr: dict[str, Any], updates: dict[str, Any]) -> dict[st
     passes ``maintainer_can_modify`` for a same-repo PR.
 
     Args:
-        pr: The current pull request object as returned by the GitHub API
-            (must include ``head.repo.id`` and ``base.repo.id``).
+        pr: The current pull request object as returned by the GitHub API.
+            When available, ``head.repo.id`` and ``base.repo.id`` are used
+            to detect cross-repo PRs; if that repo information is missing or
+            invalid, the PR is treated as same-repo and
+            ``maintainer_can_modify`` is safely omitted.
         updates: Mapping of fields the caller wants to change.  Recognised
             fields include ``title``, ``body``, ``state``, ``base``, and
             ``maintainer_can_modify``.
