@@ -34,7 +34,7 @@ mutation {
 
 ### ✅ Fix #32: Review ID Compatibility
 
-**File:** (GitHub MCP connector review handlers)
+**File:** `src/mcp_connectors/github.py` – `GitHubMCPConnector`
 
 **Change:**
 ```diff
@@ -44,6 +44,11 @@ mutation {
 + "review_node_id": "PRR_kwDOA..."
 }
 ```
+
+`dismiss_pull_request_review` also accepts a numeric ID and resolves the node
+ID via a REST GET before issuing the GraphQL mutation.
+
+**Tests:** `tests/test_github_mcp.py`
 
 **Validate:**
 ```bash
@@ -221,7 +226,7 @@ gh pr close <pr-number>
 ### Success Criteria
 
 - [ ] No GraphQL schema errors
-- [ ] Review IDs are compatible between create/dismiss
+- [x] Review IDs are compatible between create/dismiss
 - [ ] COMMENTED reviews appear in listings
 - [ ] Issue comment reactions are readable
 - [ ] Same-repo PR updates succeed
@@ -234,7 +239,7 @@ gh pr close <pr-number>
 | Issue | Component | Severity | Status |
 |-------|-----------|----------|--------|
 | #31 | GitHub MCP | High | ⏳ Pending |
-| #32 | GitHub MCP | High | ⏳ Pending |
+| #32 | GitHub MCP | High | ✅ Fixed |
 | #33 | GitHub MCP | Medium | ⏳ Pending |
 | #34 | GitHub MCP | Medium | ⏳ Pending |
 | #36 | GitHub MCP | Low | ⏳ Pending |

@@ -72,7 +72,7 @@ GraphQL schema mismatch - `PullRequest` type exposes `url` field, not `htmlUrl`.
 
 **Issue:** 0ai-Cyberviser/0ai-assurance-network#32
 
-**Status:** Documented
+**Status:** Fixed
 
 **Severity:** High - Breaks review lifecycle management
 
@@ -492,7 +492,7 @@ Use clear prefixes for disposable resources:
 ### GitHub MCP Connector
 
 - [ ] Fix #31: Update GraphQL mutation for ready-for-review
-- [ ] Fix #32: Return compatible review IDs
+- [x] Fix #32: Return compatible review IDs
 - [ ] Fix #33: Include COMMENTED reviews in listing
 - [ ] Fix #34: Fix issue-comment reaction readback
 - [ ] Fix #36: Suppress maintainer_can_modify for same-repo PRs
