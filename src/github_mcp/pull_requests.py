@@ -15,13 +15,16 @@ def is_cross_repo_pr(pr: dict[str, Any]) -> bool:
 
     The comparison uses the repository ``id`` field (integer) which is stable
     and unambiguous.  Both ``pr["head"]["repo"]`` and ``pr["base"]["repo"]``
-    must be present; if either is missing the PR is treated as same-repo so
-    the field is safely omitted.
+    must be present; if either is missing or either ``id`` is not a valid
+    integer, the PR is treated as same-repo so the field is safely omitted.
     """
     try:
         head_repo_id = pr["head"]["repo"]["id"]
         base_repo_id = pr["base"]["repo"]["id"]
     except (KeyError, TypeError):
+        return False
+
+    if type(head_repo_id) is not int or type(base_repo_id) is not int:
         return False
     return head_repo_id != base_repo_id
 
