@@ -3385,14 +3385,20 @@ func BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(
 		} else {
 			seenReceiptIDs[snapshot.SnapshotReceiptID] = idx
 		}
+		if snapshot.ChainID == "" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d is missing chain_id", idx))
+		}
 		if manifest.ChainID == "" {
 			manifest.ChainID = snapshot.ChainID
-		} else if snapshot.ChainID != "" && manifest.ChainID != snapshot.ChainID {
+		} else if manifest.ChainID != snapshot.ChainID {
 			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d chain_id mismatch", idx))
+		}
+		if snapshot.PolicyPath == "" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d is missing policy_path", idx))
 		}
 		if manifest.PolicyPath == "" {
 			manifest.PolicyPath = snapshot.PolicyPath
-		} else if snapshot.PolicyPath != "" && manifest.PolicyPath != snapshot.PolicyPath {
+		} else if manifest.PolicyPath != snapshot.PolicyPath {
 			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d policy_path mismatch", idx))
 		}
 		if idx > 0 {
