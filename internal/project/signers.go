@@ -3506,11 +3506,54 @@ func BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(
 			VerifiedBy:                 item.VerificationReceipt.VerifiedBy,
 		}
 
+		expectedReceiptID := deterministicArtifactID(
+			"retained-inventory-verification",
+			snapshotDigest,
+			item.Snapshot.LatestCurrentPolicyVersion,
+			item.VerificationReceipt.VerifiedAt,
+			item.VerificationReceipt.VerifiedBy,
+		)
+		if item.Snapshot.Version != "1.0.0" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s has unexpected version %s", path, item.Snapshot.Version))
+		}
+		if item.Snapshot.Status != "consistent" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s status must be consistent", path))
+		}
+		if len(item.Snapshot.Issues) > 0 {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s carries unresolved issues", path))
+		}
+		if len(item.Snapshot.Entries) != item.Snapshot.PackageCount {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s package_count does not match entries", path))
+		}
+		actualVerifiedCount := 0
+		for _, retainedEntry := range item.Snapshot.Entries {
+			if retainedEntry.Verified {
+				actualVerifiedCount++
+			}
+		}
+		if actualVerifiedCount != item.Snapshot.VerifiedCount {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s verified_count does not match entries", path))
+		}
+		if item.VerificationReceipt.Version != "1.0.0" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s verification receipt has unexpected version %s", path, item.VerificationReceipt.Version))
+		}
 		if item.VerificationReceipt.Status != "verified" {
 			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s is not verified", path))
 		}
+		if _, err := parseRFC3339(item.VerificationReceipt.VerifiedAt, "retained inventory verification verified_at"); err != nil {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s verification receipt verified_at is invalid", path))
+		}
+		if strings.TrimSpace(item.VerificationReceipt.VerifiedBy) == "" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s verification receipt verified_by must be set", path))
+		}
+		if item.VerificationReceipt.VerificationReceiptID != expectedReceiptID {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s verification_receipt_id mismatch", path))
+		}
 		if item.VerificationReceipt.InventorySnapshotDigest != snapshotDigest {
 			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s digest mismatch", path))
+		}
+		if item.VerificationReceipt.ExpectedInventorySnapshotDigest != snapshotDigest {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s expected digest mismatch", path))
 		}
 		if item.VerificationReceipt.PackageCount != item.Snapshot.PackageCount {
 			manifest.Issues = append(manifest.Issues, fmt.Sprintf("retained inventory snapshot %s package_count mismatch", path))

@@ -1852,6 +1852,60 @@ func TestSignerRotationActivationAuditRetainedInventoryContinuityManifest(t *tes
 	}
 }
 
+func TestSignerRotationActivationAuditRetainedInventoryContinuityManifestFlagsVerificationReceiptDrift(t *testing.T) {
+	bundle, err := LoadBundle("../..")
+	if err != nil {
+		t.Fatalf("LoadBundle failed: %v", err)
+	}
+
+	currentExport := mustCurrentSignerRotationActivationAuditExportPackage(t, bundle)
+	rotatedExport := mustRotatedSignerRotationActivationAuditExportPackage(t, bundle)
+	index, err := BuildSignerRotationActivationAuditArchiveIndex(SignerRotationActivationAuditArchiveIndexRequest{
+		Packages: []SignerRotationActivationAuditArchivePackage{
+			{PackagePath: "build/rotation/current-audit-export.json", ExportPackage: currentExport},
+			{PackagePath: "build/rotation/governance-chair-audit-export.json", ExportPackage: rotatedExport},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditArchiveIndex failed: %v", err)
+	}
+	rotatedPackage := mustSignerRotationActivationAuditRetainedInventoryPackage(
+		t,
+		"build/rotation/governance-chair-audit-export.json",
+		"build/rotation/governance-chair-archive-promotion.json",
+		rotatedExport,
+		index,
+		"2026-04-24T00:20:00Z",
+		"2026-04-24T00:25:00Z",
+	)
+	snapshot := mustSignerRotationActivationAuditRetainedInventorySnapshot(t, rotatedPackage)
+	receipt, err := VerifySignerRotationActivationAuditRetainedInventorySnapshot(SignerRotationActivationAuditRetainedInventoryVerificationRequest{
+		Snapshot:   snapshot,
+		Packages:   []SignerRotationActivationAuditRetainedInventoryPackage{rotatedPackage},
+		VerifiedAt: "2026-04-24T00:30:00Z",
+		VerifiedBy: "governance-audit-bot",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignerRotationActivationAuditRetainedInventorySnapshot failed: %v", err)
+	}
+	receipt.VerificationReceiptID = "retained-inventory-verification-deadbeef"
+
+	manifest, err := BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(SignerRotationActivationAuditRetainedInventoryContinuityManifestRequest{
+		Snapshots: []SignerRotationActivationAuditRetainedInventoryContinuityPackage{
+			{SnapshotPath: "build/rotation/retained-archive-inventory.json", Snapshot: snapshot, VerificationReceipt: receipt},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest failed: %v", err)
+	}
+	if manifest.Status != "invalid" {
+		t.Fatalf("expected invalid retained inventory continuity status, got %s", manifest.Status)
+	}
+	if len(manifest.Issues) == 0 || !strings.Contains(strings.Join(manifest.Issues, " | "), "verification_receipt_id mismatch") {
+		t.Fatalf("expected verification receipt drift issue, got %+v", manifest.Issues)
+	}
+}
+
 func TestSignerRotationActivationAuditRetainedInventoryContinuityManifestFlagsDroppedEntry(t *testing.T) {
 	bundle, err := LoadBundle("../..")
 	if err != nil {

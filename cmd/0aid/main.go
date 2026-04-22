@@ -1052,11 +1052,13 @@ func readActivationAuditPromotionPackages(promotionPaths string, verificationPat
 	}
 	collected := make([]project.SignerRotationActivationAuditRetainedInventoryPackage, 0, len(promotions))
 	for idx := range promotions {
-		promotionPath := filepath.Clean(strings.TrimSpace(promotions[idx]))
-		verificationPath := filepath.Clean(strings.TrimSpace(verifications[idx]))
-		if promotionPath == "" || verificationPath == "" {
+		rawPromotionPath := strings.TrimSpace(promotions[idx])
+		rawVerificationPath := strings.TrimSpace(verifications[idx])
+		if rawPromotionPath == "" || rawVerificationPath == "" {
 			return nil, fmt.Errorf("promotion and verification receipt paths must not be empty")
 		}
+		promotionPath := filepath.Clean(rawPromotionPath)
+		verificationPath := filepath.Clean(rawVerificationPath)
 		var promotion project.SignerRotationActivationAuditArchivePromotionResult
 		if err := readJSONFile(promotionPath, &promotion); err != nil {
 			return nil, err
@@ -1085,11 +1087,13 @@ func readRetainedInventoryContinuityPackages(inventoryPaths string, verification
 	}
 	collected := make([]project.SignerRotationActivationAuditRetainedInventoryContinuityPackage, 0, len(inventories))
 	for idx := range inventories {
-		inventoryPath := filepath.Clean(strings.TrimSpace(inventories[idx]))
-		verificationPath := filepath.Clean(strings.TrimSpace(verifications[idx]))
-		if inventoryPath == "" || verificationPath == "" {
+		rawInventoryPath := strings.TrimSpace(inventories[idx])
+		rawVerificationPath := strings.TrimSpace(verifications[idx])
+		if rawInventoryPath == "" || rawVerificationPath == "" {
 			return nil, fmt.Errorf("inventory and inventory verification paths must not be empty")
 		}
+		inventoryPath := filepath.Clean(rawInventoryPath)
+		verificationPath := filepath.Clean(rawVerificationPath)
 		var snapshot project.SignerRotationActivationAuditRetainedInventorySnapshot
 		if err := readJSONFile(inventoryPath, &snapshot); err != nil {
 			return nil, err
