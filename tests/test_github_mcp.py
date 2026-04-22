@@ -1,5 +1,6 @@
-"""Tests for github_mcp.pull_requests – same-repo PR update guard (Fix #36)."""
-"""Unit tests for GitHub MCP connector reaction handlers (Defect #34).
+"""Tests for github_mcp.pull_requests – same-repo PR update guard (Fix #36).
+
+Unit tests for GitHub MCP connector reaction handlers (Defect #34).
 
 These tests verify that:
 
@@ -35,10 +36,28 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from github_mcp.pull_requests import build_update_payload, is_cross_repo_pr  # noqa: E402
+from assurancectl.github_mcp import (  # noqa: E402
+    _ISSUE_COMMENT_REACTIONS_PATH,
+    _ISSUE_REACTIONS_PATH,
+    _PR_REACTIONS_PATH,
+    _normalize_reaction,
+    get_issue_comment_reactions,
+    get_issue_reactions,
+    get_pr_reactions,
+)
+import mcp_connectors.github as gh_mod  # noqa: E402
+from mcp_connectors.github import (  # noqa: E402
+    GitHubAPIError,
+    GitHubGraphQLError,
+    GitHubMCPConnector,
+    _is_node_id,
+)
 
 
 def _make_pr(*, head_repo_id: int, base_repo_id: int) -> dict:
@@ -155,31 +174,6 @@ class TestBuildUpdatePayload(unittest.TestCase):
         pr = _make_pr(head_repo_id=100, base_repo_id=100)
         self.assertEqual(build_update_payload(pr, {}), {})
 
-
-if __name__ == "__main__":
-    unittest.main()
-from typing import Any
-from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from assurancectl.github_mcp import (
-    _ISSUE_COMMENT_REACTIONS_PATH,
-    _ISSUE_REACTIONS_PATH,
-    _PR_REACTIONS_PATH,
-    _normalize_reaction,
-    get_issue_comment_reactions,
-    get_issue_reactions,
-    get_pr_reactions,
-)
-
-import mcp_connectors.github as gh_mod
-from mcp_connectors.github import (
-    GitHubAPIError,
-    GitHubGraphQLError,
-    GitHubMCPConnector,
-    _is_node_id,
-)
 
 
 # ---------------------------------------------------------------------------
