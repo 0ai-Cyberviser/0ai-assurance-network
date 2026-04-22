@@ -144,15 +144,14 @@ has returned success.
 
 **Change:**
 ```python
-# verify_upload: retry list_folder_items with exponential backoff
+# verify_upload: retry a fully paginated folder listing with exponential backoff
 def verify_upload(asset_id, *, client, folder_id=UPLOADS_FOLDER_ID,
                   item_types=None, max_retries=3, base_delay=2.0,
                   _sleep=time.sleep):
     for attempt in range(max_retries):
-        result = client.list_folder_items(
-            folder_id, item_types=item_types, continuation_token=None
+        items = list_all_folder_items(
+            folder_id, client=client, item_types=item_types
         )
-        items = result.get("items", [])
         if any(item.get("asset_id") == asset_id for item in items):
             return True
         if attempt < max_retries - 1:
