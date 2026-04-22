@@ -1,0 +1,49 @@
+{
+  "funding_pools": {
+    "validator_rewards": {
+      "allocation_percent": 40.0,
+      "min_balance": 1000000,
+      "description": "Pool for validator staking rewards"
+    },
+    "treasury_grants": {
+      "allocation_percent": 30.0,
+      "min_balance": 500000,
+      "description": "Pool for community treasury grants"
+    },
+    "development_fund": {
+      "allocation_percent": 20.0,
+      "min_balance": 300000,
+      "description": "Pool for protocol development funding"
+    },
+    "security_reserve": {
+      "allocation_percent": 10.0,
+      "min_balance": 200000,
+      "description": "Emergency security and incident response reserve"
+    }
+  },
+  "allocation_consistency": {
+    "source_of_truth": {
+      "file": "config/genesis/base-genesis.json",
+      "json_path": "treasury.fee_split_percent"
+    },
+    "bucket_mapping": {
+      "validator_rewards": "validator_rewards",
+      "treasury_grants": "treasury_grants",
+      "development_fund": "development_fund",
+      "security_reserve": "security_reserve"
+    },
+    "expected_fee_split_percent": {
+      "validator_rewards": 40.0,
+      "treasury_grants": 30.0,
+      "development_fund": 20.0,
+      "security_reserve": 10.0
+    },
+    "validation_required": true
+  },
+  "allocation_strategy": "proportional",
+  "treasury_address": "0ai-treasury-main",
+  "initial_validator_stake": 100000,
+  "grant_approval_threshold": 0.67,
+  "funding_cycle_days": 30,
+  "max_grant_per_cycle": 100000
+}
