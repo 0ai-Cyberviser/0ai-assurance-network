@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from typing import Any
 
@@ -17,23 +18,19 @@ mutation DismissReview($reviewId: ID!, $message: String!) {
 }
 """
 
-
 class GitHubAPIError(Exception):
     def __init__(self, status_code: int, message: str) -> None:
         super().__init__(message)
         self.status_code = status_code
-
 
 class GitHubGraphQLError(Exception):
     def __init__(self, errors: list[dict]) -> None:
         super().__init__(str(errors))
         self.errors = errors
 
-
 def _is_node_id(s: str) -> bool:
     """Return True if *s* looks like a GitHub GraphQL node ID (non-empty and not purely numeric)."""
     return bool(s) and not s.isdigit()
-
 
 def _github_request(method: str, url: str, *, token: str, **kwargs: Any) -> dict:
     """Make a GitHub REST API call and return the parsed JSON response."""
@@ -56,7 +53,6 @@ def _github_request(method: str, url: str, *, token: str, **kwargs: Any) -> dict
     except urllib.error.HTTPError as exc:
         raise GitHubAPIError(exc.code, exc.read().decode()) from exc
 
-
 def _graphql_request(query: str, variables: dict, *, token: str, **kwargs: Any) -> dict:
     """Make a GitHub GraphQL API call and return the ``data`` dict from the response."""
     payload = json.dumps({"query": query, "variables": variables}).encode()
@@ -78,7 +74,6 @@ def _graphql_request(query: str, variables: dict, *, token: str, **kwargs: Any) 
         raise GitHubGraphQLError(result["errors"])
     return result.get("data", {})
 
-
 class GitHubMCPConnector:
     """Connector for GitHub MCP operations."""
 
@@ -92,7 +87,6 @@ class GitHubMCPConnector:
         pull_number: int,
         body: str = "",
         event: str = "COMMENT",
-        **kwargs: Any,
     ) -> dict:
         """Submit a review on a pull request and return normalised review data."""
         url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pull_number}/reviews"
@@ -118,7 +112,6 @@ class GitHubMCPConnector:
         pull_number: int,
         review_id: int | str,
         message: str,
-        **kwargs: Any,
     ) -> dict:
         """Dismiss a pull request review.
 
