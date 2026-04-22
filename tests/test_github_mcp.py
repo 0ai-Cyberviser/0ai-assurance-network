@@ -11,7 +11,8 @@ These tests verify that:
    and PR reactions, confirming both paths are consistent.
 
 3. Pagination works correctly, collecting all pages.
-"""Tests for the GitHub MCP connector.
+
+Tests for the GitHub MCP connector.
 
 Verifies that:
 - ``GitHubAPIError`` and ``GitHubGraphQLError`` carry the expected attributes.
@@ -34,7 +35,7 @@ import sys
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -48,11 +49,18 @@ from assurancectl.github_mcp import (
     get_pr_reactions,
 )
 
+import mcp_connectors.github as gh_mod
+from mcp_connectors.github import (
+    GitHubAPIError,
+    GitHubGraphQLError,
+    GitHubMCPConnector,
+    _is_node_id,
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def _raw_reaction(
     reaction_id: int = 1,
@@ -70,10 +78,52 @@ def _raw_reaction(
 
 
 def _mock_client(pages: list[list[dict[str, Any]]]) -> MagicMock:
-    """Return a mock client whose ``.get()`` returns one page per call."""
     mock = MagicMock()
     mock.get.side_effect = pages
     return mock
+
+
+# ---------------------------------------------------------------------------
+# Sample fixtures
+# ---------------------------------------------------------------------------
+
+NUMERIC_REVIEW_ID = 4125974959
+NODE_REVIEW_ID = "PRR_kwDORtzkIs717WGv"
+
+_SAMPLE_REST_REVIEW = {
+    "id": NUMERIC_REVIEW_ID,
+    "node_id": NODE_REVIEW_ID,
+    "user": {"login": "octocat"},
+    "body": "Looks good!",
+    "state": "APPROVED",
+    "html_url": "https://github.com/owner/repo/pull/1#pullrequestreview-4125974959",
+    "pull_request_url": "https://api.github.com/repos/owner/repo/pulls/1",
+    "submitted_at": "2026-04-17T10:00:00Z",
+}
+
+_SAMPLE_GRAPHQL_DISMISS_RESPONSE = {
+    "data": {
+        "dismissPullRequestReview": {
+            "pullRequestReview": {
+                "id": NODE_REVIEW_ID,
+                "state": "DISMISSED",
+            }
+        }
+    }
+}
+
+_GRAPHQL_DISMISS_DATA = {
+    "dismissPullRequestReview": {
+        "pullRequestReview": {
+            "id": "PRR_kwDOAbc123",
+            "state": "DISMISSED",
+        }
+    }
+}
+
+
+def _make_connector() -> GitHubMCPConnector:
+    return GitHubMCPConnector("ghp_test_token_placeholder")
 
 
 # ---------------------------------------------------------------------------
@@ -115,20 +165,9 @@ class TestNormalizeReaction(unittest.TestCase):
 
 
 class TestGetIssueCommentReactions(unittest.TestCase):
-    """Defect #34 regression suite.
-
-    The root cause was that the read path called the issue-level endpoint
-    (/issues/{number}/reactions) instead of the comment-level endpoint
-    (/issues/comments/{comment_id}/reactions).  GitHub silently scopes the
-    query and returns an empty list when there are no *issue-level* reactions,
-    even though the comment does have reactions.
-    """
-
     def test_calls_issue_comment_reactions_endpoint(self) -> None:
-        """Must use /issues/comments/{id}/reactions, not /issues/{id}/reactions."""
         client = _mock_client([[]])
         get_issue_comment_reactions(client, owner="acme", repo="widgets", comment_id=99)
-
         actual_path: str = client.get.call_args[0][0]
         expected_path = _ISSUE_COMMENT_REACTIONS_PATH.format(
             owner="acme", repo="widgets", comment_id=99
@@ -136,20 +175,13 @@ class TestGetIssueCommentReactions(unittest.TestCase):
         self.assertEqual(actual_path, expected_path)
 
     def test_does_not_call_issue_level_endpoint(self) -> None:
-        """Must NOT use /issues/{number}/reactions for a comment lookup."""
         client = _mock_client([[]])
         get_issue_comment_reactions(client, owner="acme", repo="widgets", comment_id=99)
-
         actual_path: str = client.get.call_args[0][0]
         wrong_path = _ISSUE_REACTIONS_PATH.format(
             owner="acme", repo="widgets", issue_number=99
         )
-        self.assertNotEqual(
-            actual_path,
-            wrong_path,
-            "get_issue_comment_reactions must not use the issue-level endpoint "
-            "(Defect #34: this causes an empty list to be returned)",
-        )
+        self.assertNotEqual(actual_path, wrong_path)
 
     def test_returns_normalized_reactions(self) -> None:
         reaction = _raw_reaction(reaction_id=7, content="+1")
@@ -169,8 +201,8 @@ class TestGetIssueCommentReactions(unittest.TestCase):
         self.assertEqual(reactions, [])
 
     def test_paginates_across_multiple_pages(self) -> None:
-        page1 = [_raw_reaction(i, "+1") for i in range(1, 101)]   # 100 items → next page
-        page2 = [_raw_reaction(101, "heart")]                       # 1 item → done
+        page1 = [_raw_reaction(i, "+1") for i in range(1, 101)]
+        page2 = [_raw_reaction(101, "heart")]
         client = _mock_client([page1, page2])
         reactions = get_issue_comment_reactions(
             client, owner="acme", repo="widgets", comment_id=5
@@ -179,35 +211,18 @@ class TestGetIssueCommentReactions(unittest.TestCase):
         self.assertEqual(client.get.call_count, 2)
 
     def test_immediately_readable_after_creation(self) -> None:
-        """Regression for Defect #34.
-
-        Simulates the sequence that reproduced the defect:
-        1. add_reaction_to_issue_comment succeeds (reaction_id=555 is created).
-        2. get_issue_comment_reactions is called immediately.
-        3. The created reaction must appear in the result.
-
-        With the wrong endpoint the client would return [] (no issue-level
-        reactions exist) and this assertion would fail.  With the correct
-        endpoint the mock returns the reaction and the assertion passes.
-        """
         created_reaction = _raw_reaction(reaction_id=555, content="+1")
         client = _mock_client([[created_reaction], []])
-
         reactions = get_issue_comment_reactions(
             client, owner="owner", repo="repo", comment_id=42
         )
-
-        self.assertGreater(
-            len(reactions),
-            0,
-            "Reaction must appear immediately after creation (Defect #34)",
-        )
+        self.assertGreater(len(reactions), 0)
         self.assertEqual(reactions[0]["id"], 555)
         self.assertEqual(reactions[0]["content"], "+1")
 
 
 # ---------------------------------------------------------------------------
-# get_pr_reactions  (baseline – proven working path)
+# get_pr_reactions
 # ---------------------------------------------------------------------------
 
 
@@ -215,7 +230,6 @@ class TestGetPrReactions(unittest.TestCase):
     def test_calls_pr_reactions_endpoint(self) -> None:
         client = _mock_client([[]])
         get_pr_reactions(client, owner="acme", repo="widgets", pull_number=7)
-
         actual_path: str = client.get.call_args[0][0]
         expected_path = _PR_REACTIONS_PATH.format(
             owner="acme", repo="widgets", pull_number=7
@@ -230,20 +244,13 @@ class TestGetPrReactions(unittest.TestCase):
         self.assertEqual(reactions[0]["content"], "hooray")
 
     def test_issue_comment_and_pr_reactions_share_normalizer(self) -> None:
-        """Both paths must produce identical output for the same raw payload.
-
-        This is the key consistency check: the normaliser is shared so the
-        output shape is guaranteed to be identical regardless of reaction target.
-        """
         raw = _raw_reaction(reaction_id=1, content="+1")
         ic_client = _mock_client([[raw], []])
         pr_client = _mock_client([[raw], []])
-
         ic_reactions = get_issue_comment_reactions(
             ic_client, owner="o", repo="r", comment_id=10
         )
         pr_reactions = get_pr_reactions(pr_client, owner="o", repo="r", pull_number=10)
-
         self.assertEqual(ic_reactions, pr_reactions)
 
 
@@ -256,7 +263,6 @@ class TestGetIssueReactions(unittest.TestCase):
     def test_calls_issue_reactions_endpoint(self) -> None:
         client = _mock_client([[]])
         get_issue_reactions(client, owner="acme", repo="widgets", issue_number=3)
-
         actual_path: str = client.get.call_args[0][0]
         expected_path = _ISSUE_REACTIONS_PATH.format(
             owner="acme", repo="widgets", issue_number=3
@@ -264,331 +270,18 @@ class TestGetIssueReactions(unittest.TestCase):
         self.assertEqual(actual_path, expected_path)
 
     def test_issue_and_comment_endpoints_are_distinct(self) -> None:
-        """Issue reactions and issue comment reactions use distinct endpoints."""
         issue_client = _mock_client([[]])
         comment_client = _mock_client([[]])
-
         get_issue_reactions(issue_client, owner="o", repo="r", issue_number=5)
         get_issue_comment_reactions(comment_client, owner="o", repo="r", comment_id=5)
-
         issue_path: str = issue_client.get.call_args[0][0]
         comment_path: str = comment_client.get.call_args[0][0]
-
         self.assertNotEqual(issue_path, comment_path)
         self.assertIn("/issues/5/reactions", issue_path)
         self.assertIn("/issues/comments/5/reactions", comment_path)
-from unittest.mock import MagicMock, call, patch
-
-# Allow direct imports from the src layout without installing the package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import mcp_connectors.github as gh_mod  # noqa: E402
-from mcp_connectors.github import (  # noqa: E402
-    GitHubAPIError,
-    GitHubGraphQLError,
-    GitHubMCPConnector,
-    _is_node_id,
-)
 
 
 # ---------------------------------------------------------------------------
-# Sample fixtures
-# ---------------------------------------------------------------------------
-
-NUMERIC_REVIEW_ID = 4125974959
-NODE_REVIEW_ID = "PRR_kwDORtzkIs717WGv"
-
-_SAMPLE_REST_REVIEW = {
-    "id": NUMERIC_REVIEW_ID,
-    "node_id": NODE_REVIEW_ID,
-    "user": {"login": "octocat"},
-    "body": "Looks good!",
-    "state": "APPROVED",
-    "html_url": "https://github.com/owner/repo/pull/1#pullrequestreview-4125974959",
-    "pull_request_url": "https://api.github.com/repos/owner/repo/pulls/1",
-    "submitted_at": "2026-04-17T10:00:00Z",
-}
-
-_SAMPLE_GRAPHQL_DISMISS_RESPONSE = {
-    "data": {
-        "dismissPullRequestReview": {
-            "pullRequestReview": {
-                "id": NODE_REVIEW_ID,
-                "state": "DISMISSED",
-            }
-        }
-    }
-}
-
-
-# ---------------------------------------------------------------------------
-# Helper to build a connector with a dummy token
-# ---------------------------------------------------------------------------
-
-def _make_connector() -> GitHubMCPConnector:
-    return GitHubMCPConnector("ghp_test_token_placeholder")
-
-
-# ---------------------------------------------------------------------------
-# Tests for _is_node_id helper
-# ---------------------------------------------------------------------------
-
-class TestIsNodeId(unittest.TestCase):
-    def test_node_id_recognised(self) -> None:
-        self.assertTrue(_is_node_id("PRR_kwDORtzkIs717WGv"))
-        self.assertTrue(_is_node_id("PR_kwDOABC123"))
-        self.assertTrue(_is_node_id("MDExOlB1bGxSZXF1ZXN0UmV2aWV3NDEyNTk3NDk1OQ=="))
-
-    def test_numeric_id_not_recognised(self) -> None:
-        self.assertFalse(_is_node_id("4125974959"))
-        self.assertFalse(_is_node_id("123"))
-
-    def test_empty_string_not_recognised(self) -> None:
-        self.assertFalse(_is_node_id(""))
-
-
-# ---------------------------------------------------------------------------
-# Tests for add_review_to_pr
-# ---------------------------------------------------------------------------
-
-class TestAddReviewToPr(unittest.TestCase):
-    """Defect #32 – create path must return both review_id and review_node_id."""
-
-    def _mock_rest_post(self, return_value: dict) -> MagicMock:
-        """Return a context manager that patches _github_request for POST."""
-        return patch(
-            "mcp_connectors.github._github_request",
-            return_value=return_value,
-        )
-
-    def test_returns_review_id_integer(self) -> None:
-        connector = _make_connector()
-        with self._mock_rest_post(_SAMPLE_REST_REVIEW):
-            result = connector.add_review_to_pr(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                body="Looks good!",
-                event="APPROVE",
-            )
-        self.assertEqual(result["review_id"], NUMERIC_REVIEW_ID)
-
-    def test_returns_review_node_id_string(self) -> None:
-        """The critical fix: node ID must be present in the response."""
-        connector = _make_connector()
-        with self._mock_rest_post(_SAMPLE_REST_REVIEW):
-            result = connector.add_review_to_pr(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                body="Looks good!",
-                event="APPROVE",
-            )
-        self.assertEqual(result["review_node_id"], NODE_REVIEW_ID)
-        self.assertTrue(_is_node_id(result["review_node_id"]))
-
-    def test_returns_both_ids_simultaneously(self) -> None:
-        """Both IDs must co-exist in the same response dict."""
-        connector = _make_connector()
-        with self._mock_rest_post(_SAMPLE_REST_REVIEW):
-            result = connector.add_review_to_pr(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-            )
-        self.assertIn("review_id", result)
-        self.assertIn("review_node_id", result)
-
-    def test_normalises_other_fields(self) -> None:
-        connector = _make_connector()
-        with self._mock_rest_post(_SAMPLE_REST_REVIEW):
-            result = connector.add_review_to_pr(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-            )
-        self.assertEqual(result["state"], "APPROVED")
-        self.assertEqual(result["user"], "octocat")
-        self.assertEqual(result["body"], "Looks good!")
-        self.assertIsNotNone(result["submitted_at"])
-
-    def test_api_error_propagates(self) -> None:
-        connector = _make_connector()
-        with patch(
-            "mcp_connectors.github._github_request",
-            side_effect=GitHubAPIError(422, '{"message":"Validation Failed"}'),
-        ):
-            with self.assertRaises(GitHubAPIError) as ctx:
-                connector.add_review_to_pr(
-                    owner="owner",
-                    repo="repo",
-                    pull_number=1,
-                )
-        self.assertEqual(ctx.exception.status_code, 422)
-
-
-# ---------------------------------------------------------------------------
-# Tests for dismiss_pull_request_review
-# ---------------------------------------------------------------------------
-
-class TestDismissPullRequestReview(unittest.TestCase):
-    """Defect #32 – dismiss path must accept both node ID and numeric ID."""
-
-    def _mock_graphql(self, return_value: dict | None = None) -> MagicMock:
-        data = return_value if return_value is not None else _SAMPLE_GRAPHQL_DISMISS_RESPONSE["data"]
-        return patch("mcp_connectors.github._graphql_request", return_value=data)
-
-    def test_dismiss_with_node_id_succeeds(self) -> None:
-        """Passing the GraphQL node ID directly must work without REST lookup."""
-        connector = _make_connector()
-        with self._mock_graphql() as mock_gql, \
-             patch("mcp_connectors.github._github_request") as mock_rest:
-            result = connector.dismiss_pull_request_review(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                review_id=NODE_REVIEW_ID,
-                message="Dismissed via node ID.",
-            )
-        # REST should NOT be called when a node ID is supplied directly.
-        mock_rest.assert_not_called()
-        mock_gql.assert_called_once()
-        args, kwargs = mock_gql.call_args
-        # variables is the second positional argument to _graphql_request
-        self.assertEqual(args[1]["reviewId"], NODE_REVIEW_ID)
-        self.assertEqual(result["state"], "DISMISSED")
-
-    def test_dismiss_with_numeric_id_resolves_node_id(self) -> None:
-        """Passing a numeric ID triggers a REST lookup then calls GraphQL."""
-        connector = _make_connector()
-        with self._mock_graphql() as mock_gql, \
-             patch(
-                 "mcp_connectors.github._github_request",
-                 return_value=_SAMPLE_REST_REVIEW,
-             ) as mock_rest:
-            result = connector.dismiss_pull_request_review(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                review_id=NUMERIC_REVIEW_ID,
-                message="Dismissed via numeric ID.",
-            )
-        # REST GET must be called to resolve the node ID.
-        mock_rest.assert_called_once()
-        rest_args, rest_kwargs = mock_rest.call_args
-        self.assertEqual(rest_args[0], "GET")
-        self.assertIn(str(NUMERIC_REVIEW_ID), rest_args[1])
-
-        # GraphQL must be called with the resolved node ID.
-        mock_gql.assert_called_once()
-        gql_args, gql_kwargs = mock_gql.call_args
-        # variables is the second positional argument to _graphql_request
-        self.assertEqual(gql_args[1]["reviewId"], NODE_REVIEW_ID)
-        self.assertEqual(result["state"], "DISMISSED")
-
-    def test_dismiss_with_string_numeric_id_resolves_node_id(self) -> None:
-        """A numeric ID passed as a string must also trigger the REST lookup."""
-        connector = _make_connector()
-        with self._mock_graphql(), \
-             patch(
-                 "mcp_connectors.github._github_request",
-                 return_value=_SAMPLE_REST_REVIEW,
-             ) as mock_rest:
-            connector.dismiss_pull_request_review(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                review_id=str(NUMERIC_REVIEW_ID),
-                message="Dismissed via string numeric ID.",
-            )
-        mock_rest.assert_called_once()
-
-    def test_graphql_error_propagates(self) -> None:
-        connector = _make_connector()
-        with patch(
-            "mcp_connectors.github._graphql_request",
-            side_effect=GitHubGraphQLError([{"message": "Could not resolve to a node"}]),
-        ):
-            with self.assertRaises(GitHubGraphQLError) as ctx:
-                connector.dismiss_pull_request_review(
-                    owner="owner",
-                    repo="repo",
-                    pull_number=1,
-                    review_id=NODE_REVIEW_ID,
-                    message="Should fail.",
-                )
-        self.assertIn("Could not resolve to a node", str(ctx.exception))
-
-    def test_rest_lookup_failure_propagates_on_numeric_id(self) -> None:
-        connector = _make_connector()
-        with patch(
-            "mcp_connectors.github._github_request",
-            side_effect=GitHubAPIError(404, '{"message":"Not Found"}'),
-        ):
-            with self.assertRaises(GitHubAPIError) as ctx:
-                connector.dismiss_pull_request_review(
-                    owner="owner",
-                    repo="repo",
-                    pull_number=1,
-                    review_id=NUMERIC_REVIEW_ID,
-                    message="Should fail.",
-                )
-        self.assertEqual(ctx.exception.status_code, 404)
-
-
-# ---------------------------------------------------------------------------
-# Integration-style round-trip test (fully mocked)
-# ---------------------------------------------------------------------------
-
-class TestReviewLifecycleRoundTrip(unittest.TestCase):
-    """End-to-end mocked flow: create a review then dismiss it using the
-    returned ``review_node_id``."""
-
-    def test_create_then_dismiss_using_node_id(self) -> None:
-        connector = _make_connector()
-
-        # Step 1 – create review
-        with patch(
-            "mcp_connectors.github._github_request",
-            return_value=_SAMPLE_REST_REVIEW,
-        ):
-            created = connector.add_review_to_pr(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                body="LGTM",
-                event="APPROVE",
-            )
-
-        self.assertIn("review_node_id", created)
-        node_id = created["review_node_id"]
-
-        # Step 2 – dismiss using the node ID from step 1
-        dismiss_data = {
-            "dismissPullRequestReview": {
-                "pullRequestReview": {
-                    "id": node_id,
-                    "state": "DISMISSED",
-                }
-            }
-        }
-        with patch(
-            "mcp_connectors.github._graphql_request",
-            return_value=dismiss_data,
-        ) as mock_gql, patch("mcp_connectors.github._github_request") as mock_rest:
-            result = connector.dismiss_pull_request_review(
-                owner="owner",
-                repo="repo",
-                pull_number=1,
-                review_id=node_id,
-                message="No longer valid.",
-            )
-
-        # REST must NOT be invoked – node ID was used directly.
-        mock_rest.assert_not_called()
-        mock_gql.assert_called_once()
-        self.assertEqual(result["state"], "DISMISSED")
-
 # Exception tests
 # ---------------------------------------------------------------------------
 
@@ -612,9 +305,9 @@ class TestGitHubGraphQLError(unittest.TestCase):
         self.assertIn("field not found", str(err))
 
     def test_multiple_errors_joined(self) -> None:
-        err = GitHubGraphQLError(
-            [{"message": "first error"}, {"message": "second error"}]
-        )
+        err = GitHubGraphQLError([
+            {"message": "first error"}, {"message": "second error"}
+        ])
         self.assertIn("first error", str(err))
         self.assertIn("second error", str(err))
 
@@ -624,7 +317,6 @@ class TestGitHubGraphQLError(unittest.TestCase):
         self.assertIs(err.errors, errors)
 
     def test_missing_message_key(self) -> None:
-        """Errors without a 'message' key should not raise."""
         err = GitHubGraphQLError([{"type": "NOT_FOUND"}])
         self.assertEqual(str(err), "")
 
@@ -635,14 +327,23 @@ class TestGitHubGraphQLError(unittest.TestCase):
 
 
 class TestIsNodeId(unittest.TestCase):
+    def test_node_id_recognised(self) -> None:
+        self.assertTrue(_is_node_id("PRR_kwDORtzkIs717WGv"))
+        self.assertTrue(_is_node_id("PR_kwDOABC123"))
+        self.assertTrue(_is_node_id("MDExOlB1bGxSZXF1ZXN0UmV2aWV3NDEyNTk3NDk1OQ=="))
+
+    def test_numeric_id_not_recognised(self) -> None:
+        self.assertFalse(_is_node_id("4125974959"))
+        self.assertFalse(_is_node_id("123"))
+
+    def test_empty_string_not_recognised(self) -> None:
+        self.assertFalse(_is_node_id(""))
+
     def test_numeric_string_is_not_node_id(self) -> None:
         self.assertFalse(_is_node_id("12345678"))
 
     def test_alphanumeric_is_node_id(self) -> None:
         self.assertTrue(_is_node_id("PRR_kwDOA12345"))
-
-    def test_empty_string_is_not_node_id(self) -> None:
-        self.assertFalse(_is_node_id(""))
 
     def test_plain_string_is_node_id(self) -> None:
         self.assertTrue(_is_node_id("abc"))
@@ -657,13 +358,8 @@ class TestIsNodeId(unittest.TestCase):
 
 
 class TestGithubRequest(unittest.TestCase):
-    """Unit tests for _github_request using urllib mocks."""
-
     def _make_mock_response(self, body: dict, status: int = 200):
-        """Return a mock that behaves like urllib.request.urlopen context manager."""
-        import io
         import json
-
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(body).encode()
         mock_resp.__enter__ = lambda s: s
@@ -689,14 +385,12 @@ class TestGithubRequest(unittest.TestCase):
                 token="tok",
                 json_data={"event": "APPROVE"},
             )
-        req_arg = mock_open.call_args[0][0]
         import json
-
+        req_arg = mock_open.call_args[0][0]
         self.assertEqual(json.loads(req_arg.data.decode()), {"event": "APPROVE"})
 
     def test_raises_github_api_error_on_non_2xx(self) -> None:
         import urllib.error
-
         http_err = urllib.error.HTTPError(
             url="https://api.github.com/test",
             code=404,
@@ -731,7 +425,6 @@ class TestGithubRequest(unittest.TestCase):
 class TestGraphqlRequest(unittest.TestCase):
     def _make_mock_response(self, body: dict):
         import json
-
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(body).encode()
         mock_resp.__enter__ = lambda s: s
@@ -739,9 +432,7 @@ class TestGraphqlRequest(unittest.TestCase):
         return mock_resp
 
     def test_returns_data_field(self) -> None:
-        mock_resp = self._make_mock_response(
-            {"data": {"someField": "value"}}
-        )
+        mock_resp = self._make_mock_response({"data": {"someField": "value"}})
         with patch("urllib.request.urlopen", return_value=mock_resp):
             result = gh_mod._graphql_request("{query}", {}, token="tok")
         self.assertEqual(result, {"someField": "value"})
@@ -757,7 +448,7 @@ class TestGraphqlRequest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# GitHubMCPConnector.add_review_to_pr tests
+# add_review_to_pr tests
 # ---------------------------------------------------------------------------
 
 
@@ -808,19 +499,44 @@ class TestAddReviewToPr(unittest.TestCase):
         payload = mock_fn.call_args[1]["json_data"]
         self.assertNotIn("body", payload)
 
+    def test_returns_review_id_integer(self) -> None:
+        connector = _make_connector()
+        with patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW):
+            result = connector.add_review_to_pr(
+                owner="owner", repo="repo", pull_number=1, body="Looks good!", event="APPROVE"
+            )
+        self.assertEqual(result["review_id"], NUMERIC_REVIEW_ID)
+
+    def test_returns_review_node_id_string(self) -> None:
+        connector = _make_connector()
+        with patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW):
+            result = connector.add_review_to_pr(
+                owner="owner", repo="repo", pull_number=1, body="Looks good!", event="APPROVE"
+            )
+        self.assertEqual(result["review_node_id"], NODE_REVIEW_ID)
+        self.assertTrue(_is_node_id(result["review_node_id"]))
+
+    def test_returns_both_ids_simultaneously(self) -> None:
+        connector = _make_connector()
+        with patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW):
+            result = connector.add_review_to_pr(owner="owner", repo="repo", pull_number=1)
+        self.assertIn("review_id", result)
+        self.assertIn("review_node_id", result)
+
+    def test_api_error_propagates(self) -> None:
+        connector = _make_connector()
+        with patch(
+            "mcp_connectors.github._github_request",
+            side_effect=GitHubAPIError(422, '{"message":"Validation Failed"}'),
+        ): 
+            with self.assertRaises(GitHubAPIError) as ctx:
+                connector.add_review_to_pr(owner="owner", repo="repo", pull_number=1)
+        self.assertEqual(ctx.exception.status_code, 422)
+
 
 # ---------------------------------------------------------------------------
-# GitHubMCPConnector.dismiss_pull_request_review tests
+# dismiss_pull_request_review tests
 # ---------------------------------------------------------------------------
-
-_GRAPHQL_DISMISS_DATA = {
-    "dismissPullRequestReview": {
-        "pullRequestReview": {
-            "id": "PRR_kwDOAbc123",
-            "state": "DISMISSED",
-        }
-    }
-}
 
 
 class TestDismissPullRequestReview(unittest.TestCase):
@@ -828,12 +544,10 @@ class TestDismissPullRequestReview(unittest.TestCase):
         return GitHubMCPConnector(token="test-token")
 
     def test_uses_node_id_directly(self) -> None:
-        """When given a node ID, no REST GET should be made."""
         mock_rest = MagicMock()
         mock_gql = MagicMock(return_value=_GRAPHQL_DISMISS_DATA)
-        with patch.object(gh_mod, "_github_request", mock_rest), patch.object(
-            gh_mod, "_graphql_request", mock_gql
-        ):
+        with patch.object(gh_mod, "_github_request", mock_rest), \
+             patch.object(gh_mod, "_graphql_request", mock_gql):
             result = self._connector().dismiss_pull_request_review(
                 "owner", "repo", 1, review_id="PRR_kwDOAbc123", message="oops"
             )
@@ -841,13 +555,11 @@ class TestDismissPullRequestReview(unittest.TestCase):
         self.assertEqual(result["state"], "DISMISSED")
 
     def test_resolves_numeric_id_via_rest(self) -> None:
-        """When given a numeric DB ID, a REST GET must be called to fetch node_id."""
         raw_review = {"node_id": "PRR_kwDOAbc123", "id": 99}
         mock_rest = MagicMock(return_value=raw_review)
         mock_gql = MagicMock(return_value=_GRAPHQL_DISMISS_DATA)
-        with patch.object(gh_mod, "_github_request", mock_rest), patch.object(
-            gh_mod, "_graphql_request", mock_gql
-        ):
+        with patch.object(gh_mod, "_github_request", mock_rest), \
+             patch.object(gh_mod, "_graphql_request", mock_gql):
             result = self._connector().dismiss_pull_request_review(
                 "owner", "repo", 42, review_id=99, message="dismiss"
             )
@@ -860,9 +572,8 @@ class TestDismissPullRequestReview(unittest.TestCase):
         raw_review = {"node_id": "PRR_node", "id": 7}
         mock_rest = MagicMock(return_value=raw_review)
         mock_gql = MagicMock(return_value=_GRAPHQL_DISMISS_DATA)
-        with patch.object(gh_mod, "_github_request", mock_rest), patch.object(
-            gh_mod, "_graphql_request", mock_gql
-        ):
+        with patch.object(gh_mod, "_github_request", mock_rest), \
+             patch.object(gh_mod, "_graphql_request", mock_gql):
             self._connector().dismiss_pull_request_review(
                 "o", "r", 1, review_id=7, message="bye"
             )
@@ -873,13 +584,101 @@ class TestDismissPullRequestReview(unittest.TestCase):
     def test_returns_state_key(self) -> None:
         mock_rest = MagicMock()
         mock_gql = MagicMock(return_value=_GRAPHQL_DISMISS_DATA)
-        with patch.object(gh_mod, "_github_request", mock_rest), patch.object(
-            gh_mod, "_graphql_request", mock_gql
-        ):
+        with patch.object(gh_mod, "_github_request", mock_rest), \
+             patch.object(gh_mod, "_graphql_request", mock_gql):
             result = self._connector().dismiss_pull_request_review(
                 "o", "r", 1, review_id="PRR_kwDOAbc123"
             )
         self.assertIn("state", result)
+
+    def test_dismiss_with_node_id_succeeds(self) -> None:
+        connector = _make_connector()
+        dismiss_data = _SAMPLE_GRAPHQL_DISMISS_RESPONSE["data"]
+        with patch("mcp_connectors.github._graphql_request", return_value=dismiss_data) as mock_gql, \
+             patch("mcp_connectors.github._github_request") as mock_rest:
+            result = connector.dismiss_pull_request_review(
+                owner="owner", repo="repo", pull_number=1,
+                review_id=NODE_REVIEW_ID, message="Dismissed via node ID."
+            )
+        mock_rest.assert_not_called()
+        mock_gql.assert_called_once()
+        args, kwargs = mock_gql.call_args
+        self.assertEqual(args[1]["reviewId"], NODE_REVIEW_ID)
+        self.assertEqual(result["state"], "DISMISSED")
+
+    def test_dismiss_with_numeric_id_resolves_node_id(self) -> None:
+        connector = _make_connector()
+        dismiss_data = _SAMPLE_GRAPHQL_DISMISS_RESPONSE["data"]
+        with patch("mcp_connectors.github._graphql_request", return_value=dismiss_data) as mock_gql, \
+             patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW) as mock_rest:
+            result = connector.dismiss_pull_request_review(
+                owner="owner", repo="repo", pull_number=1,
+                review_id=NUMERIC_REVIEW_ID, message="Dismissed via numeric ID."
+            )
+        mock_rest.assert_called_once()
+        rest_args, _ = mock_rest.call_args
+        self.assertEqual(rest_args[0], "GET")
+        self.assertIn(str(NUMERIC_REVIEW_ID), rest_args[1])
+        mock_gql.assert_called_once()
+        gql_args, _ = mock_gql.call_args
+        self.assertEqual(gql_args[1]["reviewId"], NODE_REVIEW_ID)
+        self.assertEqual(result["state"], "DISMISSED")
+
+    def test_graphql_error_propagates(self) -> None:
+        connector = _make_connector()
+        with patch(
+            "mcp_connectors.github._graphql_request",
+            side_effect=GitHubGraphQLError([{"message": "Could not resolve to a node"}]),
+        ):
+            with self.assertRaises(GitHubGraphQLError) as ctx:
+                connector.dismiss_pull_request_review(
+                    owner="owner", repo="repo", pull_number=1,
+                    review_id=NODE_REVIEW_ID, message="Should fail."
+                )
+        self.assertIn("Could not resolve to a node", str(ctx.exception))
+
+    def test_rest_lookup_failure_propagates_on_numeric_id(self) -> None:
+        connector = _make_connector()
+        with patch(
+            "mcp_connectors.github._github_request",
+            side_effect=GitHubAPIError(404, '{"message":"Not Found"}'),
+        ):
+            with self.assertRaises(GitHubAPIError) as ctx:
+                connector.dismiss_pull_request_review(
+                    owner="owner", repo="repo", pull_number=1,
+                    review_id=NUMERIC_REVIEW_ID, message="Should fail."
+                )
+        self.assertEqual(ctx.exception.status_code, 404)
+
+
+# ---------------------------------------------------------------------------
+# Integration-style round-trip test (fully mocked)
+# ---------------------------------------------------------------------------
+
+
+class TestReviewLifecycleRoundTrip(unittest.TestCase):
+    def test_create_then_dismiss_using_node_id(self) -> None:
+        connector = _make_connector()
+        with patch("mcp_connectors.github._github_request", return_value=_SAMPLE_REST_REVIEW):
+            created = connector.add_review_to_pr(
+                owner="owner", repo="repo", pull_number=1, body="LGTM", event="APPROVE",
+            )
+        self.assertIn("review_node_id", created)
+        node_id = created["review_node_id"]
+        dismiss_data = {
+            "dismissPullRequestReview": {
+                "pullRequestReview": {"id": node_id, "state": "DISMISSED"}
+            }
+        }
+        with patch("mcp_connectors.github._graphql_request", return_value=dismiss_data) as mock_gql, \
+             patch("mcp_connectors.github._github_request") as mock_rest:
+            result = connector.dismiss_pull_request_review(
+                owner="owner", repo="repo", pull_number=1,
+                review_id=node_id, message="No longer valid.",
+            )
+        mock_rest.assert_not_called()
+        mock_gql.assert_called_once()
+        self.assertEqual(result["state"], "DISMISSED")
 
 
 if __name__ == "__main__":
