@@ -38,6 +38,12 @@ jobs:
       - name: Run Python unit tests
         run: python -m unittest discover -s tests -v
 
+      - name: Validate funding configuration
+        run: make funding-validate
+
+      - name: Run funding deployment tests
+        run: make funding-test
+
   go:
     name: Go Build
     runs-on: ubuntu-latest

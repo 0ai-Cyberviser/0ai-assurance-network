@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet funding-deploy funding-validate funding-test clean
 
 help:
 	@echo ""
@@ -44,6 +44,9 @@ help:
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
 	@echo "  assemble-localnet Render a reproducible localnet bundle from collected manifests"
+	@echo "  funding-deploy   Deploy blockchain funding configuration"
+	@echo "  funding-validate Validate funding configuration"
+	@echo "  funding-test     Run funding deployment tests"
 	@echo "  clean            Remove generated localnet artifacts"
 	@echo ""
 
@@ -201,6 +204,16 @@ assemble-localnet:
 	@test -n "$(COLLECTION)" || (echo "Usage: make assemble-localnet COLLECTION=build/collection OUT=build/assembled" && exit 1)
 	@test -n "$(OUT)" || (echo "Usage: make assemble-localnet COLLECTION=build/collection OUT=build/assembled" && exit 1)
 	./0aid assemble-localnet --root . --collection $(COLLECTION) --out $(OUT)
+
+funding-deploy:
+	@test -n "$(FUNDING_CONFIG)" || (echo "Usage: make funding-deploy FUNDING_CONFIG=config/governance/funding-config.json [OUT=build/funding-deployment.json] [DRY_RUN=true]" && exit 1)
+	$(PYTHON) scripts/deploy_funding.py --root . --funding-config $(FUNDING_CONFIG) $(if $(OUT),--output $(OUT),) $(if $(DRY_RUN),--dry-run,)
+
+funding-validate:
+	$(PYTHON) scripts/deploy_funding.py --root . --funding-config config/governance/funding-config.json --dry-run
+
+funding-test:
+	$(PYTHON) -m unittest tests.test_funding_deployment -v
 
 clean:
 	rm -rf build/localnet .cache 0aid

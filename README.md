@@ -96,6 +96,9 @@ make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
 make -C projects/0ai-assurance-network assemble-localnet COLLECTION=build/collection OUT=build/assembled
+make -C projects/0ai-assurance-network funding-deploy FUNDING_CONFIG=config/governance/funding-config.json OUT=build/funding-deployment.json DRY_RUN=true
+make -C projects/0ai-assurance-network funding-validate
+make -C projects/0ai-assurance-network funding-test
 ```
 
 `validate` checks that the topology, genesis, and governance policy files are
@@ -109,6 +112,19 @@ internally consistent.
 
 `readiness` scores the current launch posture and calls out blockers before the
 project pretends it is closer to launch than it really is.
+
+`funding-deploy` validates and deploys the blockchain funding configuration,
+including treasury allocation, validator funding, and grant distribution
+mechanisms. It generates deployment artifacts that specify funding pool
+allocations and validator stake amounts.
+
+`funding-validate` performs a dry-run validation of the funding configuration
+without deploying, checking that allocation percentages sum to 100%, all
+required fields are present, and the allocation strategy is valid.
+
+`funding-test` runs the complete funding deployment test suite, validating
+configuration validation, deployment artifact generation, and validator funding
+allocation logic.
 
 `governance-sim` runs the explainable governance inference engine against a
 proposal JSON document and outputs proposal class, risk score, required houses,

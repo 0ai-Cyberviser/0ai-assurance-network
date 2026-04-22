@@ -1,0 +1,30 @@
+{
+  "funding_pools": {
+    "validator_rewards": {
+      "allocation_percent": 40.0,
+      "min_balance": 1000000,
+      "description": "Pool for validator staking rewards"
+    },
+    "treasury_grants": {
+      "allocation_percent": 30.0,
+      "min_balance": 500000,
+      "description": "Pool for community treasury grants"
+    },
+    "development_fund": {
+      "allocation_percent": 20.0,
+      "min_balance": 300000,
+      "description": "Pool for protocol development funding"
+    },
+    "security_reserve": {
+      "allocation_percent": 10.0,
+      "min_balance": 200000,
+      "description": "Emergency security and incident response reserve"
+    }
+  },
+  "allocation_strategy": "proportional",
+  "treasury_address": "0ai-treasury-main",
+  "initial_validator_stake": 100000,
+  "grant_approval_threshold": 0.67,
+  "funding_cycle_days": 30,
+  "max_grant_per_cycle": 100000
+}
