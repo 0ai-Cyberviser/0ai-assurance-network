@@ -45,6 +45,8 @@ import json
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+_DEFAULT_REQUEST_TIMEOUT = 30
+
 # Modern compact node IDs: e.g. "PRR_kwDORtzkIs717WGv"
 _NODE_ID_COMPACT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*_[A-Za-z0-9+/=_-]+$")
 # Legacy base-64 node IDs: e.g. "MDExOlB1bGxSZXF1ZXN0UmV2aWV3NDEyNTk3NDk1OQ=="
@@ -99,11 +101,13 @@ def _github_request(
 
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=_DEFAULT_REQUEST_TIMEOUT) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         raise GitHubAPIError(exc.code, body) from exc
+    except urllib.error.URLError as exc:
+        raise GitHubAPIError(None, str(exc.reason)) from exc
 
 
 def _graphql_request(
@@ -308,7 +312,16 @@ class GitHubMCPConnector:
             token=self._token,
         )
         dismissed = data["dismissPullRequestReview"]["pullRequestReview"]
-        return dismissed
+        return {
+            "review_id": review_id if isinstance(review_id, int) else None,
+            "review_node_id": dismissed.get("id", node_id),
+            "pull_request_url": "",
+            "state": dismissed.get("state", ""),
+            "body": "",
+            "submitted_at": None,
+            "user": None,
+            "html_url": "",
+        }
 
     # ------------------------------------------------------------------
     # Internal helpers
