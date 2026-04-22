@@ -103,7 +103,7 @@ def generate_funding_deployment(
     # Build deployment configuration
     deployment = {
         "deployment_version": "1.0.0",
-        "network_id": topology.get("network_id", "0ai-testnet"),
+        "network_id": topology.get("chain_id", "0ai-testnet"),
         "funding_config": funding_config,
         "validators": [],
     }
