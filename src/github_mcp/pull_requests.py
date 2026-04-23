@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
 from typing import Any
 
 
@@ -62,3 +65,47 @@ def build_update_payload(pr: dict[str, Any], updates: dict[str, Any]) -> dict[st
             payload[key] = value
 
     return payload
+
+
+def update_pull_request(
+    owner: str,
+    repo: str,
+    pull_number: int,
+    pr: dict[str, Any],
+    updates: dict[str, Any],
+    *,
+    token: str,
+) -> dict[str, Any]:
+    """PATCH a pull request on GitHub, safely suppressing ``maintainer_can_modify``
+    for same-repo PRs to avoid HTTP 422.
+
+    Args:
+        owner: Repository owner.
+        repo: Repository name.
+        pull_number: Pull request number.
+        pr: The current pull request object (used to detect cross-repo).
+        updates: Fields to update (see :func:`build_update_payload`).
+        token: GitHub API token.
+
+    Returns:
+        The updated pull request object as returned by the GitHub API.
+
+    Raises:
+        urllib.error.HTTPError: On non-2xx responses.
+    """
+    payload = build_update_payload(pr, updates)
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pull_number}"
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="PATCH",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode())
