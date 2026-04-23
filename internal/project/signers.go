@@ -601,7 +601,7 @@ type SignerRotationActivationAuditRetainedInventoryVerificationReceipt struct {
 	LatestCurrentPolicyVersion      string   `json:"latest_current_policy_version,omitempty"`
 	LatestCurrentPolicyDigest       string   `json:"latest_current_policy_digest,omitempty"`
 	InventorySnapshotDigest         string   `json:"inventory_snapshot_digest"`
-	ExpectedInventorySnapshotDigest string   `json:"expected_inventory_snapshot_digest,omitempty"`
+	ExpectedInventorySnapshotDigest string   `json:"expected_inventory_snapshot_digest"`
 	VerificationIssues              []string `json:"verification_issues"`
 }
 
