@@ -1,0 +1,4 @@
+beneficiary_address,allocation_tokens,start_utc,cliff_days,duration_days,slice_days,revocable,label
+0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,10000000,2026-05-16T00:00:00Z,180,730,30,false,team_founder_1
+0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,8000000,2026-05-16T00:00:00Z,180,730,30,false,team_founder_2
+0xcccccccccccccccccccccccccccccccccccccccc,5000000,2026-05-16T00:00:00Z,90,365,30,false,advisor_1
