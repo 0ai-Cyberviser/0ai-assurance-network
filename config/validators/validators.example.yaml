@@ -1,0 +1,63 @@
+# Example permissioned validator manifest for localnet/testnet planning.
+# Do not store production private keys or signer secrets in this file.
+
+schema_version: 0ai.validators.v1
+network: 0ai-assurance-localnet
+validator_set:
+  size: 7
+  permissioned: true
+  transferability_assumption: none
+  public_sale_assumption: none
+validators:
+  - id: validator-01
+    operator: 0ai-validator-01
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+  - id: validator-02
+    operator: 0ai-validator-02
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+  - id: validator-03
+    operator: 0ai-validator-03
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+  - id: validator-04
+    operator: 0ai-validator-04
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+  - id: validator-05
+    operator: 0ai-validator-05
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+  - id: validator-06
+    operator: 0ai-validator-06
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+  - id: validator-07
+    operator: 0ai-validator-07
+    role: genesis_validator
+    public_key_digest: sha256:replace-with-public-key-digest
+    voting_power: 1
+    status: pending_review
+governance:
+  dual_house_metadata: true
+  launch_readiness_required: true
+  legal_review_required: true
+  external_audit_required: true
+  incident_response_required: true
+provenance:
+  generated_by: 0aid
+  generated_for: localnet-template
+  digest_algorithm: sha256

@@ -33,15 +33,17 @@ Verifies that:
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
+import urllib.request
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from github_mcp.pull_requests import build_update_payload, is_cross_repo_pr  # noqa: E402
+from github_mcp.pull_requests import build_update_payload, is_cross_repo_pr, update_pull_request  # noqa: E402
 from assurancectl.github_mcp import (  # noqa: E402
     _ISSUE_COMMENT_REACTIONS_PATH,
     _ISSUE_REACTIONS_PATH,
@@ -826,6 +828,106 @@ class TestReviewLifecycleRoundTrip(unittest.TestCase):
         mock_rest.assert_not_called()
         mock_gql.assert_called_once()
         self.assertEqual(result["state"], "DISMISSED")
+
+
+class TestUpdatePullRequest(unittest.TestCase):
+    """Unit tests for update_pull_request – wires build_update_payload into HTTP PATCH."""
+
+    def _make_same_repo_pr(self) -> dict:
+        return _make_pr(head_repo_id=100, base_repo_id=100)
+
+    def _make_cross_repo_pr(self) -> dict:
+        return _make_pr(head_repo_id=100, base_repo_id=200)
+
+    def _mock_urlopen(self, response_data: dict) -> MagicMock:
+        """Return a context-manager mock that yields a response with encoded JSON."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(response_data).encode()
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__ = MagicMock(return_value=mock_resp)
+        mock_ctx.__exit__ = MagicMock(return_value=False)
+        return mock_ctx
+
+    def test_calls_build_update_payload(self) -> None:
+        """update_pull_request must call build_update_payload to filter the payload."""
+        pr = self._make_same_repo_pr()
+        updates = {"title": "New title", "maintainer_can_modify": True}
+        response_data = {"number": 1, "title": "New title"}
+
+        with patch("github_mcp.pull_requests.build_update_payload", wraps=build_update_payload) as mock_build, \
+             patch("github_mcp.pull_requests.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_urlopen(response_data)
+            update_pull_request("owner", "repo", 1, pr, updates, token="tok")
+
+        mock_build.assert_called_once_with(pr, updates)
+
+    def test_suppresses_maintainer_can_modify_for_same_repo_pr(self) -> None:
+        """maintainer_can_modify must be dropped from the PATCH body for same-repo PRs."""
+        pr = self._make_same_repo_pr()
+        updates = {"title": "Same repo update", "maintainer_can_modify": True}
+        response_data = {"number": 1, "title": "Same repo update"}
+        captured_requests: list = []
+
+        def fake_urlopen(req: urllib.request.Request) -> MagicMock:
+            captured_requests.append(req)
+            return self._mock_urlopen(response_data)
+
+        with patch("github_mcp.pull_requests.urllib.request.urlopen", side_effect=fake_urlopen):
+            update_pull_request("owner", "repo", 1, pr, updates, token="tok")
+
+        self.assertEqual(len(captured_requests), 1)
+        sent_payload = json.loads(captured_requests[0].data.decode())
+        self.assertNotIn("maintainer_can_modify", sent_payload)
+        self.assertEqual(sent_payload["title"], "Same repo update")
+
+    def test_patches_correct_url(self) -> None:
+        """update_pull_request must PATCH the correct GitHub API URL."""
+        pr = self._make_same_repo_pr()
+        response_data = {"number": 42, "title": "Updated"}
+        captured_requests: list = []
+
+        def fake_urlopen(req: urllib.request.Request) -> MagicMock:
+            captured_requests.append(req)
+            return self._mock_urlopen(response_data)
+
+        with patch("github_mcp.pull_requests.urllib.request.urlopen", side_effect=fake_urlopen):
+            update_pull_request("my-org", "my-repo", 42, pr, {"title": "Updated"}, token="tok")
+
+        self.assertEqual(len(captured_requests), 1)
+        self.assertEqual(
+            captured_requests[0].full_url,
+            "https://api.github.com/repos/my-org/my-repo/pulls/42",
+        )
+        self.assertEqual(captured_requests[0].get_method(), "PATCH")
+
+    def test_returns_parsed_json_response(self) -> None:
+        """update_pull_request must return the parsed JSON from the API response."""
+        pr = self._make_same_repo_pr()
+        expected = {"number": 7, "title": "Returned PR", "state": "open"}
+
+        with patch("github_mcp.pull_requests.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = self._mock_urlopen(expected)
+            result = update_pull_request("owner", "repo", 7, pr, {"title": "Returned PR"}, token="tok")
+
+        self.assertEqual(result, expected)
+
+    def test_cross_repo_pr_forwards_maintainer_can_modify(self) -> None:
+        """For cross-repo PRs, maintainer_can_modify must be included in the PATCH body."""
+        pr = self._make_cross_repo_pr()
+        updates = {"title": "Fork update", "maintainer_can_modify": True}
+        response_data = {"number": 1, "title": "Fork update", "maintainer_can_modify": True}
+        captured_requests: list = []
+
+        def fake_urlopen(req: urllib.request.Request) -> MagicMock:
+            captured_requests.append(req)
+            return self._mock_urlopen(response_data)
+
+        with patch("github_mcp.pull_requests.urllib.request.urlopen", side_effect=fake_urlopen):
+            update_pull_request("owner", "repo", 1, pr, updates, token="tok")
+
+        sent_payload = json.loads(captured_requests[0].data.decode())
+        self.assertIn("maintainer_can_modify", sent_payload)
+        self.assertTrue(sent_payload["maintainer_can_modify"])
 
 
 if __name__ == "__main__":
