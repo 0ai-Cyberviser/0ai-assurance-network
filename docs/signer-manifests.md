@@ -478,6 +478,11 @@ Inventory generation fails closed when:
 - retained entries collide on policy version, promotion receipt id, attestation id, or verification receipt id
 - retained entries disagree on chain or policy path metadata
 
+## Retained inventory verification and continuity
+
+`0aid signer-rotation-ledger-verify-inventory` independently rebuilds a retained
+inventory snapshot from the same promoted-baseline artifacts used to create it
+and emits a deterministic verification receipt.
 The `snapshot_receipt_id` is only emitted on `consistent` snapshots and is
 computed deterministically from the chain ID, policy path, latest policy
 version/digest, package/verified counts, and the ordered set of verification
@@ -494,6 +499,38 @@ has not drifted from the promoted-baseline lineage.
 Example:
 
 ```bash
+./0aid signer-rotation-ledger-verify-inventory \
+  --inventory ./build/rotation/retained-archive-inventory.json \
+  --promotions ./build/rotation/governance-chair-archive-promotion.json \
+  --verification-receipts ./build/rotation/governance-chair-archive-verification.json \
+  --verified-at 2026-04-24T00:30:00Z \
+  --verified-by governance-audit-bot \
+  --out ./build/rotation/retained-archive-inventory-verification.json
+```
+
+The retained inventory verification receipt includes:
+
+- the inventory snapshot digest and independently recomputed expected digest
+- package and verified counts
+- chain, policy path, and latest retained baseline metadata
+- a deterministic receipt id bound to the snapshot digest, verification time, and verifier
+
+Inventory verification fails closed when:
+
+- the supplied snapshot drifts from the recomputed promoted-baseline lineage
+- the supplied snapshot is not `consistent`
+- any retained promotion or promotion verification receipt is invalid
+
+`0aid signer-rotation-ledger-continuity-manifest` builds a continuity manifest
+over one or more verified retained inventory snapshots.
+
+Example:
+
+```bash
+./0aid signer-rotation-ledger-continuity-manifest \
+  --inventories ./build/rotation/retained-archive-inventory.json \
+  --inventory-verifications ./build/rotation/retained-archive-inventory-verification.json \
+  --out ./build/rotation/retained-archive-continuity-manifest.json
 ./0aid signer-rotation-ledger-continuity-manifest \
   --snapshots ./build/rotation/retained-archive-inventory.json \
   --out ./build/rotation/retained-inventory-continuity.json
@@ -509,6 +546,17 @@ Multiple snapshots can be supplied as a comma-separated list (oldest to newest):
 
 The continuity manifest includes:
 
+- every retained inventory snapshot path and digest
+- the retained inventory verification receipt id and digest
+- package counts and latest retained baseline metadata for each snapshot
+- the latest continuous retained baseline summary across the verified history
+
+Continuity generation fails closed when:
+
+- an inventory verification receipt does not match its snapshot digest or summary
+- a later snapshot drops or mutates an earlier retained promotion receipt
+- snapshots collide on inventory verification receipt id, digest, or latest policy version
+- snapshots disagree on chain or policy path metadata
 - per-snapshot entries with snapshot receipt IDs, counts, and policy version
 - shared chain ID and policy path validated across the full sequence
 - latest current policy version/digest from the most recent snapshot
@@ -556,6 +604,10 @@ complete audit trail of the retained inventory history.
     index entry produce a matching promotion receipt and attestation pair.
 17. Verify the promoted retained baseline and retain the verification receipt.
 18. Rebuild the retained inventory snapshot whenever a new promoted baseline is
+    independently verified.
+19. Verify each retained inventory snapshot against its promoted-baseline lineage.
+20. Rebuild the retained inventory continuity manifest whenever a verified
+    retained inventory snapshot is added.
     independently verified. Confirm the snapshot carries a `snapshot_receipt_id`.
 19. Rebuild the continuity manifest over the full ordered sequence of retained
     inventory snapshots whenever a new snapshot is produced. Confirm the manifest

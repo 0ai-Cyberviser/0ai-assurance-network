@@ -3,6 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory signer-rotation-ledger-verify-inventory signer-rotation-ledger-continuity-manifest init-node collect-validator assemble-genesis assemble-localnet clean
 .PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet funding-deploy funding-validate funding-test clean
 
 help:
@@ -40,6 +41,8 @@ help:
 	@echo "  signer-rotation-ledger-promote Emit archive promotion receipts and retained-baseline attestations"
 	@echo "  signer-rotation-ledger-verify-promotion Verify promoted retained baselines and emit verification receipts"
 	@echo "  signer-rotation-ledger-retained-inventory Build a retained inventory snapshot over verified promoted baselines"
+	@echo "  signer-rotation-ledger-verify-inventory Verify a retained inventory snapshot against promoted-baseline lineage"
+	@echo "  signer-rotation-ledger-continuity-manifest Build a retained inventory continuity manifest"
 	@echo "  init-node        Generate a development node bundle: make init-node ID=val-1"
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
@@ -187,6 +190,18 @@ signer-rotation-ledger-retained-inventory:
 	@test -n "$(VERIFICATION_RECEIPTS)" || (echo "Usage: make signer-rotation-ledger-retained-inventory PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json" && exit 1)
 	./0aid signer-rotation-ledger-retained-inventory --promotions $(PROMOTIONS) --verification-receipts $(VERIFICATION_RECEIPTS) $(if $(OUT),--out $(OUT),)
 
+signer-rotation-ledger-verify-inventory:
+	@test -n "$(INVENTORY)" || (echo "Usage: make signer-rotation-ledger-verify-inventory INVENTORY=build/rotation/retained-archive-inventory.json PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json VERIFIED_AT=2026-04-24T00:30:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(PROMOTIONS)" || (echo "Usage: make signer-rotation-ledger-verify-inventory INVENTORY=build/rotation/retained-archive-inventory.json PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json VERIFIED_AT=2026-04-24T00:30:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(VERIFICATION_RECEIPTS)" || (echo "Usage: make signer-rotation-ledger-verify-inventory INVENTORY=build/rotation/retained-archive-inventory.json PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json VERIFIED_AT=2026-04-24T00:30:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(VERIFIED_AT)" || (echo "Usage: make signer-rotation-ledger-verify-inventory INVENTORY=build/rotation/retained-archive-inventory.json PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json VERIFIED_AT=2026-04-24T00:30:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	@test -n "$(VERIFIED_BY)" || (echo "Usage: make signer-rotation-ledger-verify-inventory INVENTORY=build/rotation/retained-archive-inventory.json PROMOTIONS=build/rotation/governance-chair-archive-promotion.json VERIFICATION_RECEIPTS=build/rotation/governance-chair-archive-verification.json VERIFIED_AT=2026-04-24T00:30:00Z VERIFIED_BY=governance-audit-bot" && exit 1)
+	./0aid signer-rotation-ledger-verify-inventory --inventory $(INVENTORY) --promotions $(PROMOTIONS) --verification-receipts $(VERIFICATION_RECEIPTS) --verified-at $(VERIFIED_AT) --verified-by $(VERIFIED_BY) $(if $(OUT),--out $(OUT),)
+
+signer-rotation-ledger-continuity-manifest:
+	@test -n "$(INVENTORIES)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest INVENTORIES=build/rotation/retained-archive-inventory.json INVENTORY_VERIFICATIONS=build/rotation/retained-archive-inventory-verification.json" && exit 1)
+	@test -n "$(INVENTORY_VERIFICATIONS)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest INVENTORIES=build/rotation/retained-archive-inventory.json INVENTORY_VERIFICATIONS=build/rotation/retained-archive-inventory-verification.json" && exit 1)
+	./0aid signer-rotation-ledger-continuity-manifest --inventories $(INVENTORIES) --inventory-verifications $(INVENTORY_VERIFICATIONS) $(if $(OUT),--out $(OUT),)
 signer-rotation-ledger-continuity-manifest:
 	@test -n "$(SNAPSHOTS)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest SNAPSHOTS=build/rotation/retained-archive-inventory.json" && exit 1)
 	./0aid signer-rotation-ledger-continuity-manifest --snapshots $(SNAPSHOTS) $(if $(OUT),--out $(OUT),)

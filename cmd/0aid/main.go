@@ -731,6 +731,64 @@ func run(args []string) error {
 			return errors.New("retained inventory snapshot verification failed")
 		}
 		return nil
+	case "signer-rotation-ledger-verify-inventory":
+		fs := flag.NewFlagSet("signer-rotation-ledger-verify-inventory", flag.ContinueOnError)
+		inventoryPath := fs.String("inventory", "", "retained inventory snapshot path")
+		promotionPaths := fs.String("promotions", "", "comma-separated archive promotion result paths")
+		verificationPaths := fs.String("verification-receipts", "", "comma-separated archive promotion verification receipt paths")
+		verifiedAt := fs.String("verified-at", "", "verification timestamp (RFC3339)")
+		verifiedBy := fs.String("verified-by", "", "operator or automation actor recording verification")
+		out := fs.String("out", "", "output file path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*inventoryPath) == "" {
+			return errors.New("signer-rotation-ledger-verify-inventory requires --inventory")
+		}
+		if strings.TrimSpace(*promotionPaths) == "" {
+			return errors.New("signer-rotation-ledger-verify-inventory requires --promotions")
+		}
+		if strings.TrimSpace(*verificationPaths) == "" {
+			return errors.New("signer-rotation-ledger-verify-inventory requires --verification-receipts")
+		}
+		if strings.TrimSpace(*verifiedAt) == "" {
+			return errors.New("signer-rotation-ledger-verify-inventory requires --verified-at")
+		}
+		if strings.TrimSpace(*verifiedBy) == "" {
+			return errors.New("signer-rotation-ledger-verify-inventory requires --verified-by")
+		}
+		var snapshot project.SignerRotationActivationAuditRetainedInventorySnapshot
+		if err := readJSONFile(filepath.Clean(*inventoryPath), &snapshot); err != nil {
+			return err
+		}
+		packages, err := readActivationAuditPromotionPackages(*promotionPaths, *verificationPaths)
+		if err != nil {
+			return err
+		}
+		receipt, err := project.VerifySignerRotationActivationAuditRetainedInventorySnapshot(project.SignerRotationActivationAuditRetainedInventoryVerificationRequest{
+			Snapshot:   snapshot,
+			Packages:   packages,
+			VerifiedAt: *verifiedAt,
+			VerifiedBy: *verifiedBy,
+		})
+		if err != nil {
+			return err
+		}
+		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), receipt); err != nil {
+				return err
+			}
+		} else if err := printJSON(receipt); err != nil {
+			return err
+		}
+		if receipt.Status != "verified" {
+			return errors.New("retained inventory verification failed")
+		}
+		return nil
+	case "signer-rotation-ledger-continuity-manifest":
+		fs := flag.NewFlagSet("signer-rotation-ledger-continuity-manifest", flag.ContinueOnError)
+		inventoryPaths := fs.String("inventories", "", "comma-separated retained inventory snapshot paths")
+		verificationPaths := fs.String("inventory-verifications", "", "comma-separated retained inventory verification receipt paths")
 	case "signer-rotation-ledger-continuity-manifest":
 		fs := flag.NewFlagSet("signer-rotation-ledger-continuity-manifest", flag.ContinueOnError)
 		snapshotPaths := fs.String("snapshots", "", "comma-separated retained inventory snapshot paths")
@@ -738,6 +796,17 @@ func run(args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
+		if strings.TrimSpace(*inventoryPaths) == "" {
+			return errors.New("signer-rotation-ledger-continuity-manifest requires --inventories")
+		}
+		if strings.TrimSpace(*verificationPaths) == "" {
+			return errors.New("signer-rotation-ledger-continuity-manifest requires --inventory-verifications")
+		}
+		snapshots, err := readRetainedInventoryContinuityPackages(*inventoryPaths, *verificationPaths)
+		if err != nil {
+			return err
+		}
+		manifest, err := project.BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(project.SignerRotationActivationAuditRetainedInventoryContinuityManifestRequest{
 		if strings.TrimSpace(*snapshotPaths) == "" {
 			return errors.New("signer-rotation-ledger-continuity-manifest requires --snapshots")
 		}
@@ -752,6 +821,13 @@ func run(args []string) error {
 			return err
 		}
 		if *out != "" {
+			if err := project.WriteJSON(filepath.Clean(*out), manifest); err != nil {
+				return err
+			}
+		} else if err := printJSON(manifest); err != nil {
+			return err
+		}
+		if manifest.Status != "continuous" {
 			if err := project.WriteJSON(filepath.Clean(*out), continuity); err != nil {
 				return err
 			}
@@ -930,6 +1006,7 @@ func run(args []string) error {
 
 func usageError() error {
 	return errors.New(
+		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|signer-rotation-ledger-promote|signer-rotation-ledger-verify-promotion|signer-rotation-ledger-retained-inventory|signer-rotation-ledger-verify-inventory|signer-rotation-ledger-continuity-manifest|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 		"usage: 0aid <version|module-map|module-plan|identity-plan|signer-manifest|signer-rotation-receipt|signer-rotation-approve|signer-rotation-finalize|signer-rotation-activate|signer-rotation-apply|signer-rotation-verify|signer-rotation-ledger-append|signer-rotation-ledger-reconcile|signer-rotation-ledger-export|signer-rotation-ledger-verify-export|signer-rotation-ledger-archive-index|signer-rotation-ledger-promote|signer-rotation-ledger-verify-promotion|signer-rotation-ledger-retained-inventory|signer-rotation-ledger-continuity-manifest|show-plan|init-genesis|render-validator|render-identity|init-node|collect-validator|assemble-genesis|assemble-localnet> [flags]",
 	)
 }
@@ -994,11 +1071,13 @@ func readActivationAuditPromotionPackages(promotionPaths string, verificationPat
 	}
 	collected := make([]project.SignerRotationActivationAuditRetainedInventoryPackage, 0, len(promotions))
 	for idx := range promotions {
-		promotionPath := filepath.Clean(strings.TrimSpace(promotions[idx]))
-		verificationPath := filepath.Clean(strings.TrimSpace(verifications[idx]))
-		if promotionPath == "" || verificationPath == "" {
+		rawPromotionPath := strings.TrimSpace(promotions[idx])
+		rawVerificationPath := strings.TrimSpace(verifications[idx])
+		if rawPromotionPath == "" || rawVerificationPath == "" {
 			return nil, fmt.Errorf("promotion and verification receipt paths must not be empty")
 		}
+		promotionPath := filepath.Clean(rawPromotionPath)
+		verificationPath := filepath.Clean(rawVerificationPath)
 		var promotion project.SignerRotationActivationAuditArchivePromotionResult
 		if err := readJSONFile(promotionPath, &promotion); err != nil {
 			return nil, err
@@ -1019,6 +1098,37 @@ func readActivationAuditPromotionPackages(promotionPaths string, verificationPat
 	return collected, nil
 }
 
+func readRetainedInventoryContinuityPackages(inventoryPaths string, verificationPaths string) ([]project.SignerRotationActivationAuditRetainedInventoryContinuityPackage, error) {
+	inventories := strings.Split(inventoryPaths, ",")
+	verifications := strings.Split(verificationPaths, ",")
+	if len(inventories) != len(verifications) {
+		return nil, fmt.Errorf("inventory and inventory verification path counts must match")
+	}
+	collected := make([]project.SignerRotationActivationAuditRetainedInventoryContinuityPackage, 0, len(inventories))
+	for idx := range inventories {
+		rawInventoryPath := strings.TrimSpace(inventories[idx])
+		rawVerificationPath := strings.TrimSpace(verifications[idx])
+		if rawInventoryPath == "" || rawVerificationPath == "" {
+			return nil, fmt.Errorf("inventory and inventory verification paths must not be empty")
+		}
+		inventoryPath := filepath.Clean(rawInventoryPath)
+		verificationPath := filepath.Clean(rawVerificationPath)
+		var snapshot project.SignerRotationActivationAuditRetainedInventorySnapshot
+		if err := readJSONFile(inventoryPath, &snapshot); err != nil {
+			return nil, err
+		}
+		var verification project.SignerRotationActivationAuditRetainedInventoryVerificationReceipt
+		if err := readJSONFile(verificationPath, &verification); err != nil {
+			return nil, err
+		}
+		collected = append(collected, project.SignerRotationActivationAuditRetainedInventoryContinuityPackage{
+			SnapshotPath:        filepath.ToSlash(inventoryPath),
+			Snapshot:            snapshot,
+			VerificationReceipt: verification,
+		})
+	}
+	if len(collected) == 0 {
+		return nil, fmt.Errorf("no retained inventory snapshots found")
 func readRetainedInventorySnapshots(path string) ([]project.SignerRotationActivationAuditRetainedInventorySnapshot, error) {
 	paths := strings.Split(path, ",")
 	collected := make([]project.SignerRotationActivationAuditRetainedInventorySnapshot, 0, len(paths))
