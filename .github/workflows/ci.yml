@@ -47,6 +47,9 @@ jobs:
       - name: Validate funding configuration
         run: make funding-validate
 
+      - name: Validate Peachtree recursive learning fixtures
+        run: python scripts/validate_peachtree_recursive_learning.py tests/fixtures/peachtree-recursive-learning
+
   go:
     name: Go Build
     runs-on: ubuntu-latest
