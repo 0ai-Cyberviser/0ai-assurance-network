@@ -1,0 +1,9 @@
+macro_id,category,title,message_template,escalation_path
+M01,wallet,Wrong Network,"Please switch your wallet to Base Mainnet (Chain ID 8453), refresh, and retry mint.","Support L2 -> Eng On-call"
+M02,transaction,Pending Tx,"Your transaction is pending. Do not submit duplicates yet. Check explorer and wait for confirmation.","Support L1 -> Ops"
+M03,transaction,Reverted Tx,"The transaction reverted. Common causes: phase not open, cap reached, insufficient ETH for gas.","Support L1 -> Eng"
+M04,allowlist,Not Eligible,"Your wallet is not in the current allowlist snapshot. Public mint opens at {public_start_utc}.","Support L1"
+M05,security,Scam Warning,"Use only official links from pinned announcements. Never share seed phrases.","Support L1 -> Security"
+M06,metadata,Reveal Timing,"Metadata reveal is scheduled for {reveal_utc}. Until then, pre-reveal art is expected.","Support L1"
+M07,billing,Overcharge Concern,"On-chain total paid = mint price + gas. Gas is a network fee and not collected by us.","Support L2 -> Finance"
+M08,incident,Service Degraded,"We are investigating degraded mint performance. Next update in {minutes} minutes.","Ops -> Comms"
