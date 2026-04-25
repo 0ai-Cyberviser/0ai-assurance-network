@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,8 +66,8 @@ def _parse_utc_timestamp(value: Any, field_name: str) -> datetime:
     except ValueError as exc:
         raise ValidationError(f"{field_name} must be RFC3339 timestamp") from exc
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def validate_topology(topology: dict[str, Any]) -> None:
