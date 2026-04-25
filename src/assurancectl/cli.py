@@ -92,6 +92,7 @@ def _parser() -> argparse.ArgumentParser:
     threat = subparsers.add_parser("governance-threat-scan", help="scan proposal for zero-day threats and vulnerabilities")
     threat.add_argument("--proposal", required=True, help="proposal JSON file path")
     threat.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    threat.add_argument("--non-blocking", action="store_true", help="exit with 0 even on blocking threats (log warnings only)")
     _add_artifact_argument(threat)
 
     multimodel = subparsers.add_parser("governance-multi-model", help="run multi-model inference with routing")
@@ -787,6 +788,13 @@ def main(argv: list[str] | None = None) -> int:
                 for item in threat_report.security_remediation:
                     print(f"  - {item}")
 
+        # Non-blocking mode: always return 0 but log warnings
+        if args.non_blocking:
+            if threat_report.blocks_execution:
+                print("\n⚠️  WARNING: Threat detected but running in non-blocking mode.")
+                print("    Execution would be blocked in production. Human review required.")
+            return 0
+        
         return 0 if not threat_report.blocks_execution else 2
 
     if args.command == "governance-multi-model":

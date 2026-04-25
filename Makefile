@@ -88,7 +88,7 @@ governance-drift:
 
 governance-threat-scan:
 	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-threat-scan PROPOSAL=examples/proposals/emergency-pause.json" && exit 1)
-	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-threat-scan --proposal $(PROPOSAL)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-threat-scan --proposal $(PROPOSAL) --non-blocking
 
 governance-multi-model:
 	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-multi-model PROPOSAL=examples/proposals/emergency-pause.json [STRATEGY=consensus]" && exit 1)
