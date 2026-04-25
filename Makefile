@@ -4,6 +4,7 @@ GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
 .PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory signer-rotation-ledger-verify-inventory signer-rotation-ledger-continuity-manifest init-node collect-validator assemble-genesis assemble-localnet clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet funding-deploy funding-validate funding-test clean
 
 help:
 	@echo ""
@@ -19,6 +20,8 @@ help:
 	@echo "  governance-remediation Emit structured mitigation bundles for active trends"
 	@echo "  governance-replay Replay checkpoint event logs into deterministic current state"
 	@echo "  governance-drift Compare a proposal against governance history"
+	@echo "  governance-threat-scan Scan proposal for zero-day threats and vulnerabilities"
+	@echo "  governance-multi-model Run multi-model inference with routing"
 	@echo "  go-build         Build the 0aid binary"
 	@echo "  go-test          Run Go unit tests"
 	@echo "  module-plan      Render the first registry/attestation milestone plan"
@@ -44,6 +47,9 @@ help:
 	@echo "  collect-validator Normalize a node bundle into a collected manifest"
 	@echo "  assemble-genesis Merge collected manifests into a deterministic genesis plan"
 	@echo "  assemble-localnet Render a reproducible localnet bundle from collected manifests"
+	@echo "  funding-deploy   Deploy blockchain funding configuration"
+	@echo "  funding-validate Validate funding configuration"
+	@echo "  funding-test     Run funding deployment tests"
 	@echo "  clean            Remove generated localnet artifacts"
 	@echo ""
 
@@ -82,6 +88,18 @@ governance-drift:
 	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)
 	@test -n "$(HISTORY)" || (echo "Usage: make governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json" && exit 1)
 	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-drift --proposal $(PROPOSAL) --history $(HISTORY)
+
+governance-threat-scan:
+	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-threat-scan PROPOSAL=examples/proposals/emergency-pause.json" && exit 1)
+	PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-threat-scan --proposal $(PROPOSAL)
+
+governance-multi-model:
+	@test -n "$(PROPOSAL)" || (echo "Usage: make governance-multi-model PROPOSAL=examples/proposals/emergency-pause.json [STRATEGY=consensus]" && exit 1)
+	@if [ -n "$(STRATEGY)" ]; then \
+		PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-multi-model --proposal $(PROPOSAL) --strategy $(STRATEGY); \
+	else \
+		PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-multi-model --proposal $(PROPOSAL); \
+	fi
 
 go-build:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) go build ./cmd/0aid
@@ -184,6 +202,9 @@ signer-rotation-ledger-continuity-manifest:
 	@test -n "$(INVENTORIES)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest INVENTORIES=build/rotation/retained-archive-inventory.json INVENTORY_VERIFICATIONS=build/rotation/retained-archive-inventory-verification.json" && exit 1)
 	@test -n "$(INVENTORY_VERIFICATIONS)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest INVENTORIES=build/rotation/retained-archive-inventory.json INVENTORY_VERIFICATIONS=build/rotation/retained-archive-inventory-verification.json" && exit 1)
 	./0aid signer-rotation-ledger-continuity-manifest --inventories $(INVENTORIES) --inventory-verifications $(INVENTORY_VERIFICATIONS) $(if $(OUT),--out $(OUT),)
+signer-rotation-ledger-continuity-manifest:
+	@test -n "$(SNAPSHOTS)" || (echo "Usage: make signer-rotation-ledger-continuity-manifest SNAPSHOTS=build/rotation/retained-archive-inventory.json" && exit 1)
+	./0aid signer-rotation-ledger-continuity-manifest --snapshots $(SNAPSHOTS) $(if $(OUT),--out $(OUT),)
 
 init-node:
 	@test -n "$(ID)" || (echo "Usage: make init-node ID=val-1" && exit 1)
@@ -202,6 +223,16 @@ assemble-localnet:
 	@test -n "$(COLLECTION)" || (echo "Usage: make assemble-localnet COLLECTION=build/collection OUT=build/assembled" && exit 1)
 	@test -n "$(OUT)" || (echo "Usage: make assemble-localnet COLLECTION=build/collection OUT=build/assembled" && exit 1)
 	./0aid assemble-localnet --root . --collection $(COLLECTION) --out $(OUT)
+
+funding-deploy:
+	@test -n "$(FUNDING_CONFIG)" || (echo "Usage: make funding-deploy FUNDING_CONFIG=config/governance/funding-config.json [OUT=build/funding-deployment.json] [DRY_RUN=true]" && exit 1)
+	$(PYTHON) scripts/deploy_funding.py --root . --funding-config $(FUNDING_CONFIG) $(if $(OUT),--output $(OUT),) $(if $(DRY_RUN),--dry-run,)
+
+funding-validate:
+	$(PYTHON) scripts/deploy_funding.py --root . --funding-config config/governance/funding-config.json --dry-run
+
+funding-test:
+	$(PYTHON) -m unittest tests.test_funding_deployment -v
 
 clean:
 	rm -rf build/localnet .cache 0aid

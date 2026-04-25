@@ -218,9 +218,43 @@ They should be superseded by a new signed update or event log segment. The CLI
 surfaces those failures as event alerts during replay, and remediation marks the
 affected cluster as `invalid` until a clean signed update is supplied.
 
+## Advanced Features
+
+### Threat Detection
+
+The governance system now includes zero-day threat detection capabilities via
+the `governance-threat-scan` command. This analyzes proposals for security
+vulnerabilities, attack vectors, and exploit patterns.
+
+See [threat-detection.md](threat-detection.md) for details.
+
+Key capabilities:
+- Pattern-based vulnerability detection (smart contract, governance, economic exploits)
+- Threat level classification (critical, high, elevated, low)
+- Security-specific remediation requirements
+- Integration with proposal workflow
+
+### Multi-Model Routing
+
+The system supports multi-model routing for enhanced inference via the
+`governance-multi-model` command. This enables dynamic selection and composition
+of multiple inference engines.
+
+See [model-routing.md](model-routing.md) for details.
+
+Routing strategies:
+- **Waterfall**: Sequential fallback for reliability
+- **Consensus**: Multi-model voting for high-stakes decisions
+- **Hybrid**: Deterministic base with ML enhancement
+- **Specialized**: Domain-specific model selection
+
 ## Future Direction
 
-The next step is to add model-backed summarization on top of the deterministic
-queue, trend, and remediation outputs. That adapter should remain advisory only
-and should never replace the deterministic control path for classifying
-approval requirements or mitigation bundles.
+Continue expanding model-backed capabilities:
+- LLM integration for natural language summarization
+- External threat intelligence feed integration
+- Historical accuracy tracking and automatic model selection
+- Real-time security monitoring integration
+
+All enhancements remain advisory and preserve the deterministic control path for
+classifying approval requirements and mitigation bundles.

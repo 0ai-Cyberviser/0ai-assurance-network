@@ -1,0 +1,33 @@
+{
+  "pack": "launch-control-center",
+  "version": "1.1.0",
+  "purpose": "pre-launch readiness and launch simulation operations",
+  "repository_scope": "pre-launch; no public token sale authorization",
+  "artifacts": [
+    {
+      "path": "docs/launch-control/launch-control-center.md",
+      "type": "control-document",
+      "owner_role": "release-manager"
+    },
+    {
+      "path": "docs/launch-control/templates/allowlist.csv",
+      "type": "csv-template",
+      "owner_role": "community-ops"
+    },
+    {
+      "path": "docs/launch-control/templates/vesting_beneficiaries.csv",
+      "type": "csv-template",
+      "owner_role": "finance-ops"
+    },
+    {
+      "path": "docs/launch-control/templates/support_macros.csv",
+      "type": "csv-template",
+      "owner_role": "support-lead"
+    },
+    {
+      "path": "docs/launch-control/templates/incident_log.csv",
+      "type": "csv-template",
+      "owner_role": "incident-commander"
+    }
+  ]
+}

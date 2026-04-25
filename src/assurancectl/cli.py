@@ -23,6 +23,8 @@ from .inference import (
     replay_checkpoint_state,
     resolve_identity_actor_ref,
 )
+from .threat_detection import infer_threat_detection, load_threat_detection_policy
+from .model_router import route_inference, load_routing_policy
 
 
 def _add_artifact_argument(parser: argparse.ArgumentParser) -> None:
@@ -86,6 +88,18 @@ def _parser() -> argparse.ArgumentParser:
     drift.add_argument("--history", required=True, help="governance history JSON file path")
     drift.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     _add_artifact_argument(drift)
+
+    threat = subparsers.add_parser("governance-threat-scan", help="scan proposal for zero-day threats and vulnerabilities")
+    threat.add_argument("--proposal", required=True, help="proposal JSON file path")
+    threat.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    _add_artifact_argument(threat)
+
+    multimodel = subparsers.add_parser("governance-multi-model", help="run multi-model inference with routing")
+    multimodel.add_argument("--proposal", required=True, help="proposal JSON file path")
+    multimodel.add_argument("--strategy", help="routing strategy override (waterfall, consensus, hybrid, specialized)")
+    multimodel.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    _add_artifact_argument(multimodel)
+
     return parser
 
 
@@ -703,6 +717,146 @@ def main(argv: list[str] | None = None) -> int:
         )
         _print_governance_drift(drift, emit_json=args.json)
         return 0 if drift.drift_attention != "escalate" else 2
+
+    if args.command == "governance-threat-scan":
+        proposal = load_proposal(args.proposal)
+        threat_policy = load_threat_detection_policy(config)
+        threat_report = infer_threat_detection(config, proposal, policy=threat_policy)
+
+        if threat_report is None:
+            print("Threat detection is not enabled or configured.", file=sys.stderr)
+            return 1
+
+        payload = {
+            "proposal_id": threat_report.proposal_id,
+            "title": threat_report.title,
+            "threat_level": threat_report.threat_level,
+            "threat_score": threat_report.threat_score,
+            "vulnerability_categories": threat_report.vulnerability_categories,
+            "attack_vectors": threat_report.attack_vectors,
+            "triggered_patterns": threat_report.triggered_patterns,
+            "security_signals": threat_report.security_signals,
+            "rationale": threat_report.rationale,
+            "security_remediation": threat_report.security_remediation,
+            "requires_security_review": threat_report.requires_security_review,
+            "blocks_execution": threat_report.blocks_execution,
+            "requires_escalation": threat_report.requires_escalation,
+            "summary": threat_report.summary,
+        }
+
+        _maybe_write_artifact(
+            path=args.artifact_out,
+            artifact_type="governance_threat_scan",
+            command=args.command,
+            payload=payload,
+            sources={"proposal": args.proposal},
+        )
+
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(f"Proposal: {threat_report.title}")
+            print(f"Threat level: {threat_report.threat_level}")
+            print(f"Threat score: {threat_report.threat_score}")
+            print(f"Requires security review: {threat_report.requires_security_review}")
+            print(f"Blocks execution: {threat_report.blocks_execution}")
+            print(f"Requires escalation: {threat_report.requires_escalation}")
+            print(f"Summary: {threat_report.summary}")
+            if threat_report.vulnerability_categories:
+                print("Vulnerability categories:")
+                for item in threat_report.vulnerability_categories:
+                    print(f"  - {item}")
+            if threat_report.attack_vectors:
+                print("Attack vectors:")
+                for item in threat_report.attack_vectors:
+                    print(f"  - {item}")
+            if threat_report.triggered_patterns:
+                print("Triggered patterns:")
+                for item in threat_report.triggered_patterns:
+                    print(f"  - {item}")
+            if threat_report.security_signals:
+                print("Security signals:")
+                for item in threat_report.security_signals:
+                    print(f"  - {item}")
+            if threat_report.rationale:
+                print("Rationale:")
+                for item in threat_report.rationale:
+                    print(f"  - {item}")
+            if threat_report.security_remediation:
+                print("Security remediation:")
+                for item in threat_report.security_remediation:
+                    print(f"  - {item}")
+
+        return 0 if not threat_report.blocks_execution else 2
+
+    if args.command == "governance-multi-model":
+        proposal = load_proposal(args.proposal)
+        # First run base inference to get proposal class
+        base_report = infer_governance_report(config, proposal)
+
+        routing_policy = load_routing_policy(config)
+
+        # Override strategy if provided
+        if args.strategy:
+            routing_policy = dict(routing_policy)
+            routing_policy["default_strategy"] = args.strategy
+
+        multi_result = route_inference(
+            config,
+            proposal,
+            base_report.proposal_class,
+            policy=routing_policy,
+        )
+
+        payload = {
+            "proposal_id": multi_result.proposal_id,
+            "title": multi_result.title,
+            "routing_decision": {
+                "strategy": multi_result.routing_decision.strategy,
+                "selected_models": multi_result.routing_decision.selected_models,
+                "fallback_chain": multi_result.routing_decision.fallback_chain,
+                "rationale": multi_result.routing_decision.rationale,
+                "max_latency_ms": multi_result.routing_decision.max_latency_ms,
+                "requires_consensus": multi_result.routing_decision.requires_consensus,
+            },
+            "model_results": multi_result.model_results,
+            "aggregated_result": multi_result.aggregated_result,
+            "consensus_achieved": multi_result.consensus_achieved,
+            "confidence": multi_result.confidence,
+            "execution_time_ms": multi_result.execution_time_ms,
+            "summary": multi_result.summary,
+        }
+
+        _maybe_write_artifact(
+            path=args.artifact_out,
+            artifact_type="governance_multi_model",
+            command=args.command,
+            payload=payload,
+            sources={"proposal": args.proposal},
+        )
+
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(f"Proposal: {multi_result.title}")
+            print(f"Routing strategy: {multi_result.routing_decision.strategy}")
+            print(f"Selected models: {', '.join(multi_result.routing_decision.selected_models)}")
+            print(f"Execution time: {multi_result.execution_time_ms:.2f}ms")
+            print(f"Consensus achieved: {multi_result.consensus_achieved}")
+            print(f"Confidence: {multi_result.confidence:.2f}")
+            print(f"Summary: {multi_result.summary}")
+            print("Model results:")
+            for model_id, result in multi_result.model_results.items():
+                success = "✓" if result.get("success") else "✗"
+                print(f"  {success} {model_id}: {result.get('error', 'OK')}")
+            if multi_result.aggregated_result:
+                print("Aggregated result:")
+                for key, value in multi_result.aggregated_result.items():
+                    if isinstance(value, (list, dict)):
+                        continue
+                    print(f"  {key}: {value}")
+
+        return 0
 
     parser.error(f"unknown command: {args.command}")
     return 2

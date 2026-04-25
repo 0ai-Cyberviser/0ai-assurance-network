@@ -571,6 +571,7 @@ type SignerRotationActivationAuditRetainedInventorySnapshotEntry struct {
 type SignerRotationActivationAuditRetainedInventorySnapshot struct {
 	Version                    string                                                        `json:"version"`
 	Status                     string                                                        `json:"status"`
+	SnapshotReceiptID          string                                                        `json:"snapshot_receipt_id,omitempty"`
 	PackageCount               int                                                           `json:"package_count"`
 	VerifiedCount              int                                                           `json:"verified_count"`
 	ChainID                    string                                                        `json:"chain_id"`
@@ -630,6 +631,13 @@ type SignerRotationActivationAuditRetainedInventoryContinuityEntry struct {
 	LatestCurrentPolicyDigest  string `json:"latest_current_policy_digest,omitempty"`
 	VerifiedAt                 string `json:"verified_at"`
 	VerifiedBy                 string `json:"verified_by"`
+type SignerRotationActivationAuditRetainedInventoryContinuityEntry struct {
+	SnapshotReceiptID          string `json:"snapshot_receipt_id"`
+	PackageCount               int    `json:"package_count"`
+	VerifiedCount              int    `json:"verified_count"`
+	LatestCurrentPolicyVersion string `json:"latest_current_policy_version"`
+	LatestCurrentPolicyDigest  string `json:"latest_current_policy_digest"`
+	Status                     string `json:"status"`
 }
 
 type SignerRotationActivationAuditRetainedInventoryContinuityManifest struct {
@@ -639,10 +647,18 @@ type SignerRotationActivationAuditRetainedInventoryContinuityManifest struct {
 	VerifiedSnapshotCount      int                                                             `json:"verified_snapshot_count"`
 	ChainID                    string                                                          `json:"chain_id"`
 	PolicyPath                 string                                                          `json:"policy_path"`
+	ManifestID                 string                                                          `json:"manifest_id,omitempty"`
+	ChainID                    string                                                          `json:"chain_id"`
+	PolicyPath                 string                                                          `json:"policy_path"`
+	SnapshotCount              int                                                             `json:"snapshot_count"`
 	LatestCurrentPolicyVersion string                                                          `json:"latest_current_policy_version,omitempty"`
 	LatestCurrentPolicyDigest  string                                                          `json:"latest_current_policy_digest,omitempty"`
 	Entries                    []SignerRotationActivationAuditRetainedInventoryContinuityEntry `json:"entries"`
 	Issues                     []string                                                        `json:"issues"`
+}
+
+type SignerRotationActivationAuditRetainedInventoryContinuityRequest struct {
+	Snapshots []SignerRotationActivationAuditRetainedInventorySnapshot
 }
 
 type parsedSignerEntry struct {
@@ -3372,6 +3388,19 @@ func BuildSignerRotationActivationAuditRetainedInventorySnapshot(
 		snapshot.Status = "invalid"
 		return snapshot, nil
 	}
+	receiptValues := make([]string, 0, 4+len(snapshot.Entries))
+	receiptValues = append(receiptValues,
+		snapshot.ChainID,
+		snapshot.PolicyPath,
+		snapshot.LatestCurrentPolicyVersion,
+		snapshot.LatestCurrentPolicyDigest,
+		fmt.Sprintf("%d", snapshot.PackageCount),
+		fmt.Sprintf("%d", snapshot.VerifiedCount),
+	)
+	for _, entry := range snapshot.Entries {
+		receiptValues = append(receiptValues, entry.VerificationReceiptID)
+	}
+	snapshot.SnapshotReceiptID = deterministicArtifactID("retained-inventory-snapshot", receiptValues...)
 	snapshot.Status = "consistent"
 	return snapshot, nil
 }
@@ -3452,6 +3481,11 @@ func BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(
 ) (SignerRotationActivationAuditRetainedInventoryContinuityManifest, error) {
 	if len(request.Snapshots) == 0 {
 		return SignerRotationActivationAuditRetainedInventoryContinuityManifest{}, fmt.Errorf("retained inventory continuity manifest requires at least one inventory snapshot")
+func BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(
+	request SignerRotationActivationAuditRetainedInventoryContinuityRequest,
+) (SignerRotationActivationAuditRetainedInventoryContinuityManifest, error) {
+	if len(request.Snapshots) == 0 {
+		return SignerRotationActivationAuditRetainedInventoryContinuityManifest{}, fmt.Errorf("continuity manifest requires at least one retained inventory snapshot")
 	}
 	manifest := SignerRotationActivationAuditRetainedInventoryContinuityManifest{
 		Version: "1.0.0",
@@ -3650,6 +3684,62 @@ func BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(
 	manifest.SnapshotCount = len(manifest.Entries)
 	if len(manifest.Entries) > 0 {
 		latest := manifest.Entries[len(manifest.Entries)-1]
+	seenReceiptIDs := make(map[string]int, len(request.Snapshots))
+	manifestReceiptValues := make([]string, 0, len(request.Snapshots))
+	for idx, snapshot := range request.Snapshots {
+		entry := SignerRotationActivationAuditRetainedInventoryContinuityEntry{
+			SnapshotReceiptID:          snapshot.SnapshotReceiptID,
+			PackageCount:               snapshot.PackageCount,
+			VerifiedCount:              snapshot.VerifiedCount,
+			LatestCurrentPolicyVersion: snapshot.LatestCurrentPolicyVersion,
+			LatestCurrentPolicyDigest:  snapshot.LatestCurrentPolicyDigest,
+			Status:                     snapshot.Status,
+		}
+		if snapshot.Status != "consistent" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d status must be consistent, got %s", idx, snapshot.Status))
+		}
+		if snapshot.SnapshotReceiptID == "" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d is missing snapshot_receipt_id", idx))
+		} else if prior, exists := seenReceiptIDs[snapshot.SnapshotReceiptID]; exists {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("duplicate snapshot_receipt_id %s in snapshot %d and snapshot %d", snapshot.SnapshotReceiptID, prior, idx))
+		} else {
+			seenReceiptIDs[snapshot.SnapshotReceiptID] = idx
+		}
+		if snapshot.ChainID == "" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d is missing chain_id", idx))
+		}
+		if manifest.ChainID == "" {
+			manifest.ChainID = snapshot.ChainID
+		} else if manifest.ChainID != snapshot.ChainID {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d chain_id mismatch", idx))
+		}
+		if snapshot.PolicyPath == "" {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d is missing policy_path", idx))
+		}
+		if manifest.PolicyPath == "" {
+			manifest.PolicyPath = snapshot.PolicyPath
+		} else if manifest.PolicyPath != snapshot.PolicyPath {
+			manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d policy_path mismatch", idx))
+		}
+		if idx > 0 {
+			prev := request.Snapshots[idx-1]
+			if snapshot.PackageCount < prev.PackageCount {
+				manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d package_count regressed from %d to %d", idx, prev.PackageCount, snapshot.PackageCount))
+			}
+			if snapshot.VerifiedCount < prev.VerifiedCount {
+				manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d verified_count regressed from %d to %d", idx, prev.VerifiedCount, snapshot.VerifiedCount))
+			}
+			if snapshot.LatestCurrentPolicyVersion != "" && prev.LatestCurrentPolicyVersion != "" &&
+				snapshot.LatestCurrentPolicyVersion < prev.LatestCurrentPolicyVersion {
+				manifest.Issues = append(manifest.Issues, fmt.Sprintf("continuity snapshot %d latest_current_policy_version regressed from %s to %s", idx, prev.LatestCurrentPolicyVersion, snapshot.LatestCurrentPolicyVersion))
+			}
+		}
+		manifestReceiptValues = append(manifestReceiptValues, snapshot.SnapshotReceiptID)
+		manifest.Entries = append(manifest.Entries, entry)
+	}
+	manifest.SnapshotCount = len(manifest.Entries)
+	if manifest.SnapshotCount > 0 {
+		latest := manifest.Entries[manifest.SnapshotCount-1]
 		manifest.LatestCurrentPolicyVersion = latest.LatestCurrentPolicyVersion
 		manifest.LatestCurrentPolicyDigest = latest.LatestCurrentPolicyDigest
 	}
@@ -3657,6 +3747,7 @@ func BuildSignerRotationActivationAuditRetainedInventoryContinuityManifest(
 		manifest.Status = "invalid"
 		return manifest, nil
 	}
+	manifest.ManifestID = deterministicArtifactID("retained-inventory-continuity", manifestReceiptValues...)
 	manifest.Status = "continuous"
 	return manifest, nil
 }

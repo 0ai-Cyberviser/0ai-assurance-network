@@ -59,6 +59,11 @@ projects/0ai-assurance-network/
 └── tests/
 ```
 
+## Operational Template Packs
+
+- Launch control center pack (pre-launch simulation):
+  [`docs/launch-control/README.md`](docs/launch-control/README.md)
+
 ## Commands
 
 ```bash
@@ -71,6 +76,8 @@ make -C projects/0ai-assurance-network governance-trends REGISTRY=examples/propo
 make -C projects/0ai-assurance-network governance-remediation REGISTRY=examples/proposals/registry.json HISTORY=examples/proposals/history.json
 make -C projects/0ai-assurance-network governance-replay STATUS=examples/proposals/checkpoint-events.json
 make -C projects/0ai-assurance-network governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json
+make -C projects/0ai-assurance-network governance-threat-scan PROPOSAL=examples/proposals/emergency-pause.json
+make -C projects/0ai-assurance-network governance-multi-model PROPOSAL=examples/proposals/emergency-pause.json
 make -C projects/0ai-assurance-network go-build
 make -C projects/0ai-assurance-network go-test
 make -C projects/0ai-assurance-network module-plan
@@ -96,6 +103,9 @@ make -C projects/0ai-assurance-network init-node ID=val-3
 make -C projects/0ai-assurance-network collect-validator BUNDLE=build/nodes/val-3 OUT=build/collection/val-3.json
 make -C projects/0ai-assurance-network assemble-genesis COLLECTION=build/collection OUT=build/assembled/genesis-plan.json
 make -C projects/0ai-assurance-network assemble-localnet COLLECTION=build/collection OUT=build/assembled
+make -C projects/0ai-assurance-network funding-deploy FUNDING_CONFIG=config/governance/funding-config.json OUT=build/funding-deployment.json DRY_RUN=true
+make -C projects/0ai-assurance-network funding-validate
+make -C projects/0ai-assurance-network funding-test
 ```
 
 `validate` checks that the topology, genesis, and governance policy files are
@@ -110,6 +120,19 @@ internally consistent.
 `readiness` scores the current launch posture and calls out blockers before the
 project pretends it is closer to launch than it really is.
 
+`funding-deploy` validates the blockchain funding configuration and generates
+deployment artifacts for treasury allocation, validator funding, and grant
+distribution mechanisms. It does not perform on-chain deployment today; the
+generated artifacts specify funding pool allocations and validator stake amounts.
+
+`funding-validate` performs a dry-run validation of the funding configuration
+without deploying, checking that allocation percentages sum to 100%, all
+required fields are present, and the allocation strategy is valid.
+
+`funding-test` runs the complete funding deployment test suite, validating
+configuration validation, deployment artifact generation, and validator funding
+allocation logic.
+
 `governance-sim` runs the explainable governance inference engine against a
 proposal JSON document and outputs proposal class, risk score, required houses,
 and remediation.
@@ -122,6 +145,18 @@ flags repeated emergency use, adverse precedents, treasury growth, and other
 pattern-level risks that one-shot proposal scoring would miss. It also clusters
 precedent by proposal kind and requester, and can suppress recurring-pattern
 signals when the historical cluster is stable and clean.
+
+`governance-threat-scan` analyzes proposals for zero-day security threats and
+vulnerabilities using pattern-based detection. It identifies smart contract
+vulnerabilities, governance attack vectors, economic exploits, and infrastructure
+threats, assigning threat levels (critical, high, elevated, low) with
+security-specific remediation requirements.
+
+`governance-multi-model` runs multi-model inference with intelligent routing.
+It supports multiple strategies: waterfall (sequential fallback), consensus
+(multi-model voting), hybrid (deterministic + ML enhancement), and specialized
+(domain-specific models). This provides redundancy, reduces single-point-of-failure
+risk, and enables flexible composition of inference engines.
 
 `governance-trends` clusters the entire active queue into portfolio-level
 governance patterns so operators can spot systemic validator churn, recurring
@@ -409,6 +444,11 @@ PYTHONPATH=src python -m assurancectl.cli governance-replay \
 PYTHONPATH=src python -m assurancectl.cli governance-drift \
   --proposal examples/proposals/emergency-pause.json \
   --history examples/proposals/history.json
+PYTHONPATH=src python -m assurancectl.cli governance-threat-scan \
+  --proposal examples/proposals/emergency-pause.json
+PYTHONPATH=src python -m assurancectl.cli governance-multi-model \
+  --proposal examples/proposals/emergency-pause.json \
+  --strategy consensus
 ```
 
 The identity and node-init paths are explicitly development-only. They emit

@@ -1,0 +1,38 @@
+{
+  "schema_version": "peachtree.recursive_learning.v1",
+  "cycle_id": "cycle-0001",
+  "artifact_type": "governance_proposal",
+  "artifact_path": "examples/proposals/emergency-pause.json",
+  "artifact_sha256": "sha256:placeholder-digest-for-fixture",
+  "validation_commands": [
+    "make validate",
+    "make governance-sim PROPOSAL=examples/proposals/emergency-pause.json",
+    "make governance-threat-scan PROPOSAL=examples/proposals/emergency-pause.json"
+  ],
+  "sandbox_required": true,
+  "policy_decision": "human_review_required",
+  "findings": [
+    {
+      "finding_id": "gov-edge-0001",
+      "severity": "medium",
+      "class": "governance_edge_case",
+      "summary": "Proposal requires deterministic simulation and threat-scan review before dataset promotion."
+    }
+  ],
+  "dataset_candidate": {
+    "dataset_name": "governance_fuzz_v1.jsonl",
+    "privacy_tier": "restricted",
+    "dataset_action": "human_review",
+    "labels": [
+      "governance",
+      "fuzzing",
+      "peachtree",
+      "recursive-learning"
+    ]
+  },
+  "self_improvement": {
+    "recommendation": "Add this artifact shape to the next governance fuzz seed set after maintainer review.",
+    "next_cycle_seed_candidate": true,
+    "requires_human_approval": true
+  }
+}

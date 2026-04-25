@@ -1,0 +1,85 @@
+{
+  "version": "routing-policy-2026-04-21",
+  "default_strategy": "waterfall",
+  "strategies": {
+    "waterfall": {
+      "description": "Try models in priority order with fallback",
+      "enabled": true,
+      "max_fallback_attempts": 3
+    },
+    "consensus": {
+      "description": "Run multiple models and aggregate results",
+      "enabled": true,
+      "min_models": 2,
+      "consensus_threshold": 0.67
+    },
+    "specialized": {
+      "description": "Route to domain-specific models based on proposal type",
+      "enabled": true
+    },
+    "hybrid": {
+      "description": "Combine deterministic base with ML enhancement",
+      "enabled": true,
+      "base_model_required": true
+    }
+  },
+  "model_selection_rules": {
+    "safety_critical_proposals": {
+      "strategy": "consensus",
+      "required_models": ["deterministic", "threat-detection"],
+      "min_confidence": 0.85
+    },
+    "high_impact_proposals": {
+      "strategy": "hybrid",
+      "required_models": ["deterministic"],
+      "optional_models": ["threat-detection"],
+      "min_confidence": 0.75
+    },
+    "standard_proposals": {
+      "strategy": "waterfall",
+      "required_models": ["deterministic"],
+      "min_confidence": 0.65
+    },
+    "emergency_proposals": {
+      "strategy": "consensus",
+      "required_models": ["deterministic", "threat-detection"],
+      "min_confidence": 0.90,
+      "max_latency_ms": 5000
+    }
+  },
+  "fallback_chains": {
+    "default": [
+      "deterministic",
+      "threat-detection",
+      "fallback-deterministic"
+    ],
+    "high_confidence": [
+      "deterministic",
+      "threat-detection",
+      "ml-summarization"
+    ]
+  },
+  "aggregation_rules": {
+    "consensus": {
+      "method": "weighted_voting",
+      "conflict_resolution": "most_conservative",
+      "require_explanation_merge": true
+    },
+    "hybrid": {
+      "method": "layered_enhancement",
+      "base_weight": 0.7,
+      "enhancement_weight": 0.3
+    }
+  },
+  "performance_constraints": {
+    "max_total_latency_ms": 10000,
+    "max_cost_per_inference": 0.10,
+    "timeout_ms": 30000
+  },
+  "model_health_checks": {
+    "enabled": true,
+    "check_interval_seconds": 60,
+    "failure_threshold": 3,
+    "recovery_cooldown_seconds": 300
+  }
+}

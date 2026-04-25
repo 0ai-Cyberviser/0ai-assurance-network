@@ -469,6 +469,7 @@ The retained inventory snapshot includes:
 - current policy version/digest and latest receipt lineage
 - promotion and verification digests for each retained entry
 - a stable latest retained baseline summary across the verified set
+- a deterministic `snapshot_receipt_id` bound to the full verified entry set
 
 Inventory generation fails closed when:
 
@@ -482,6 +483,18 @@ Inventory generation fails closed when:
 `0aid signer-rotation-ledger-verify-inventory` independently rebuilds a retained
 inventory snapshot from the same promoted-baseline artifacts used to create it
 and emits a deterministic verification receipt.
+The `snapshot_receipt_id` is only emitted on `consistent` snapshots and is
+computed deterministically from the chain ID, policy path, latest policy
+version/digest, package/verified counts, and the ordered set of verification
+receipt IDs. It serves as machine-readable proof that the snapshot was
+independently verified and bound to a specific promoted-baseline lineage state.
+
+## Retained inventory continuity manifests
+
+`0aid signer-rotation-ledger-continuity-manifest` builds a continuity manifest
+over an ordered sequence of retained inventory snapshots, providing
+machine-readable proof that the retained inventory history is append-only and
+has not drifted from the promoted-baseline lineage.
 
 Example:
 
@@ -518,6 +531,17 @@ Example:
   --inventories ./build/rotation/retained-archive-inventory.json \
   --inventory-verifications ./build/rotation/retained-archive-inventory-verification.json \
   --out ./build/rotation/retained-archive-continuity-manifest.json
+./0aid signer-rotation-ledger-continuity-manifest \
+  --snapshots ./build/rotation/retained-archive-inventory.json \
+  --out ./build/rotation/retained-inventory-continuity.json
+```
+
+Multiple snapshots can be supplied as a comma-separated list (oldest to newest):
+
+```bash
+./0aid signer-rotation-ledger-continuity-manifest \
+  --snapshots ./build/rotation/retained-archive-inventory-v1.json,./build/rotation/retained-archive-inventory-v2.json \
+  --out ./build/rotation/retained-inventory-continuity.json
 ```
 
 The continuity manifest includes:
@@ -533,6 +557,24 @@ Continuity generation fails closed when:
 - a later snapshot drops or mutates an earlier retained promotion receipt
 - snapshots collide on inventory verification receipt id, digest, or latest policy version
 - snapshots disagree on chain or policy path metadata
+- per-snapshot entries with snapshot receipt IDs, counts, and policy version
+- shared chain ID and policy path validated across the full sequence
+- latest current policy version/digest from the most recent snapshot
+- a deterministic `manifest_id` bound to the ordered set of snapshot receipt IDs
+
+Continuity manifest generation fails closed when:
+
+- any snapshot status is not `consistent`
+- any snapshot is missing a `snapshot_receipt_id`
+- duplicate `snapshot_receipt_id` values appear across the sequence
+- package or verified counts regress between consecutive snapshots
+- latest policy version regresses between consecutive snapshots
+- chain ID or policy path differs between any snapshots in the sequence
+
+The `manifest_id` is only emitted on `continuous` manifests and provides a
+stable, deterministic identifier for the full continuity state. Operators
+should retain both the snapshot files and the continuity manifest as a
+complete audit trail of the retained inventory history.
 
 ## Operator workflow
 
@@ -566,3 +608,8 @@ Continuity generation fails closed when:
 19. Verify each retained inventory snapshot against its promoted-baseline lineage.
 20. Rebuild the retained inventory continuity manifest whenever a verified
     retained inventory snapshot is added.
+    independently verified. Confirm the snapshot carries a `snapshot_receipt_id`.
+19. Rebuild the continuity manifest over the full ordered sequence of retained
+    inventory snapshots whenever a new snapshot is produced. Confirm the manifest
+    status is `continuous` and retain the `manifest_id` as proof of a complete,
+    drift-free retained inventory history.
