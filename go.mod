@@ -1,3 +1,3 @@
 module github.com/0ai-Cyberviser/0ai-assurance-network
 
-go 1.26.1
+go 1.25.0
