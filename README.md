@@ -59,6 +59,11 @@ projects/0ai-assurance-network/
 └── tests/
 ```
 
+## Operational Template Packs
+
+- Launch control center pack (pre-launch simulation):
+  [`docs/launch-control/README.md`](docs/launch-control/README.md)
+
 ## Commands
 
 ```bash

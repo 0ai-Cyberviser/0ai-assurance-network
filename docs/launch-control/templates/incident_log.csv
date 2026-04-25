@@ -1,0 +1,3 @@
+incident_id,opened_utc,severity,status,detected_by,component,symptom,impact,mitigation,owner,next_update_utc,closed_utc,rca_summary,followup_ticket
+INC-001,2026-05-15T17:08:00Z,high,open,monitoring,sale_manager,revert_rate_spike,mints_failing_above_threshold,paused_sale_and_investigating,sec_lead,2026-05-15T17:20:00Z,,,
+INC-002,2026-05-15T19:18:00Z,medium,resolved,support,frontend,wrong_chain_prompt,user_confusion_hotfix_released,frontend_banner_patch,fe_lead,2026-05-15T19:30:00Z,2026-05-15T19:32:00Z,misconfigured_network_label,WEB-142

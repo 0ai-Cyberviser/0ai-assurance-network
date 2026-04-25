@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -747,7 +747,7 @@ def _parse_timestamp(value: str | None) -> datetime | None:
         return None
     normalized = value.replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(normalized).astimezone(UTC)
+        return datetime.fromisoformat(normalized).astimezone(timezone.utc)
     except ValueError:
         return None
 
@@ -1213,7 +1213,7 @@ def infer_governance_portfolio_trends(
         ]
         active_timestamps = [_parse_timestamp(entry.submitted_at) for entry in cluster_entries]
         anchor_candidates = [timestamp for timestamp in [*history_timestamps, *active_timestamps] if timestamp is not None]
-        anchor_time = max(anchor_candidates) if anchor_candidates else datetime.now(UTC)
+        anchor_time = max(anchor_candidates) if anchor_candidates else datetime.now(timezone.utc)
         recent_start = anchor_time - timedelta(days=recent_window_days)
         baseline_start = anchor_time - timedelta(days=baseline_window_days)
 
@@ -1612,7 +1612,7 @@ def infer_governance_remediation_plans(
                             and current_timestamp < max(dependency_timestamps)
                         ):
                             latest_dependency = max(dependency_timestamps)
-                            dependency_iso = latest_dependency.astimezone(UTC).isoformat().replace("+00:00", "Z")
+                            dependency_iso = latest_dependency.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
                             audit_valid = False
                             audit_note = (
                                 "Checkpoint update predates dependency completion: "
