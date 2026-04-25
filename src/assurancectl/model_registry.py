@@ -70,7 +70,7 @@ class ModelRegistry:
         self.health_status[model_id] = ModelHealthStatus(
             model_id=model_id,
             is_available=True,
-            last_check=datetime.now(UTC),
+            last_check=datetime.now(timezone.utc),
             failure_count=0,
         )
 
@@ -86,7 +86,7 @@ class ModelRegistry:
         if status and not status.is_available:
             # Check if cooldown period has passed
             if status.last_failure:
-                elapsed = (datetime.now(UTC) - status.last_failure).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - status.last_failure).total_seconds()
                 if elapsed < self._recovery_cooldown_seconds:
                     return None
 
@@ -99,7 +99,7 @@ class ModelRegistry:
 
         model = self.models[model_id]
         status = self.health_status[model_id]
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
 
         try:
             is_healthy = model.health_check()
