@@ -1,0 +1,36 @@
+# Deterministic localnet genesis template.
+# This template is for local/testnet planning only. It does not launch a public chain.
+
+schema_version: 0ai.genesis.v1
+network:
+  name: 0ai-assurance-localnet
+  chain_id: 0ai-assurance-localnet-1
+  permissioned: true
+  validator_count: 7
+assumptions:
+  public_sale: false
+  transferability: false
+  production_deployment: false
+governance:
+  dual_house_metadata: true
+  legal_review_required: true
+  external_audit_required: true
+  incident_response_required: true
+validators_source: config/validators/validators.example.yaml
+modules:
+  registry:
+    enabled: true
+    status: planned
+  attestation:
+    enabled: true
+    status: planned
+  audit_ledger:
+    enabled: true
+    status: planned
+  funding:
+    enabled: true
+    status: dry_run_only
+provenance:
+  generated_by: 0aid
+  digest_algorithm: sha256
+  review_status: pending_human_review
