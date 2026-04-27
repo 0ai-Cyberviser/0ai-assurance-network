@@ -38,6 +38,9 @@ jobs:
       - name: Readiness report
         run: make readiness
 
+      - name: Validate Peachtree recursive learning fixtures
+        run: make peachtree-validate
+
       - name: Install Python package
         run: pip install -e .
 
@@ -47,8 +50,6 @@ jobs:
       - name: Validate funding configuration
         run: make funding-validate
 
-      - name: Validate Peachtree recursive learning fixtures
-        run: python scripts/validate_peachtree_recursive_learning.py tests/fixtures/peachtree-recursive-learning
 
   go:
     name: Go Build
