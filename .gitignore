@@ -7,3 +7,5 @@ build/*.json
 __pycache__/
 *.pyc
 *.egg-info/
+.venv/
+venv/
