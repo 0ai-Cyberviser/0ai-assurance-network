@@ -1,0 +1,17 @@
+[flake8]
+# Exclude virtual environments and build artifacts
+exclude =
+    .venv,
+    venv,
+    .cache,
+    build,
+    __pycache__,
+    *.egg-info
+
+# Maximum line length
+max-line-length = 100
+
+# Ignore common style issues that don't affect code quality
+# E203: whitespace before ':'
+# W503: line break before binary operator
+ignore = E203,W503
