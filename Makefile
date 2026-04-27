@@ -3,7 +3,7 @@ PYTHON ?= python3
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet funding-deploy funding-validate funding-test clean
+.PHONY: help validate render-localnet readiness governance-sim governance-queue governance-trends governance-remediation governance-replay governance-drift governance-threat-scan governance-multi-model peachtree-validate go-build go-test module-plan identity-plan signer-manifest signer-rotation-receipt signer-rotation-approve signer-rotation-finalize signer-rotation-activate signer-rotation-apply signer-rotation-verify signer-rotation-ledger-append signer-rotation-ledger-reconcile signer-rotation-ledger-export signer-rotation-ledger-verify-export signer-rotation-ledger-archive-index signer-rotation-ledger-promote signer-rotation-ledger-verify-promotion signer-rotation-ledger-retained-inventory init-node collect-validator assemble-genesis assemble-localnet funding-deploy funding-validate funding-test clean
 
 help:
 	@echo ""
@@ -21,6 +21,7 @@ help:
 	@echo "  governance-drift Compare a proposal against governance history"
 	@echo "  governance-threat-scan Scan proposal for zero-day threats and vulnerabilities"
 	@echo "  governance-multi-model Run multi-model inference with routing"
+	@echo "  peachtree-validate Validate Peachtree recursive learning fixture records"
 	@echo "  go-build         Build the 0aid binary"
 	@echo "  go-test          Run Go unit tests"
 	@echo "  module-plan      Render the first registry/attestation milestone plan"
@@ -97,6 +98,9 @@ governance-multi-model:
 	else \
 		PYTHONPATH=src $(PYTHON) -m assurancectl.cli governance-multi-model --proposal $(PROPOSAL); \
 	fi
+
+peachtree-validate:
+	$(PYTHON) scripts/validate_peachtree_recursive_learning.py tests/fixtures/peachtree-recursive-learning
 
 go-build:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) go build ./cmd/0aid

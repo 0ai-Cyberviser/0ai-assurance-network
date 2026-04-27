@@ -78,6 +78,7 @@ make -C projects/0ai-assurance-network governance-replay STATUS=examples/proposa
 make -C projects/0ai-assurance-network governance-drift PROPOSAL=examples/proposals/emergency-pause.json HISTORY=examples/proposals/history.json
 make -C projects/0ai-assurance-network governance-threat-scan PROPOSAL=examples/proposals/emergency-pause.json
 make -C projects/0ai-assurance-network governance-multi-model PROPOSAL=examples/proposals/emergency-pause.json
+make -C projects/0ai-assurance-network peachtree-validate
 make -C projects/0ai-assurance-network go-build
 make -C projects/0ai-assurance-network go-test
 make -C projects/0ai-assurance-network module-plan
@@ -151,6 +152,8 @@ threats, assigning threat levels (critical, high, elevated, low) with
 security-specific remediation requirements.
 
 `governance-multi-model` runs multi-model inference with intelligent routing.
+
+`peachtree-validate` validates recursive learning fixture records for schema, policy posture, and redaction invariants before they are used in simulation workflows.
 It supports multiple strategies: waterfall (sequential fallback), consensus
 (multi-model voting), hybrid (deterministic + ML enhancement), and specialized
 (domain-specific models). This provides redundancy, reduces single-point-of-failure
