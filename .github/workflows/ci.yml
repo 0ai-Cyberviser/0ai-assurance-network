@@ -41,6 +41,9 @@ jobs:
       - name: Validate Peachtree recursive learning fixtures
         run: make peachtree-validate
 
+      - name: Install Python package
+        run: pip install -e .
+
       - name: Run Python unit tests
         run: PYTHONPATH=src python -m unittest discover -s tests -v
 
