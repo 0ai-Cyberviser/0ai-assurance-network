@@ -631,13 +631,7 @@ type SignerRotationActivationAuditRetainedInventoryContinuityEntry struct {
 	LatestCurrentPolicyDigest  string `json:"latest_current_policy_digest,omitempty"`
 	VerifiedAt                 string `json:"verified_at"`
 	VerifiedBy                 string `json:"verified_by"`
-type SignerRotationActivationAuditRetainedInventoryContinuityEntry struct {
-	SnapshotReceiptID          string `json:"snapshot_receipt_id"`
-	PackageCount               int    `json:"package_count"`
-	VerifiedCount              int    `json:"verified_count"`
-	LatestCurrentPolicyVersion string `json:"latest_current_policy_version"`
-	LatestCurrentPolicyDigest  string `json:"latest_current_policy_digest"`
-	Status                     string `json:"status"`
+	SnapshotReceiptID          string `json:"snapshot_receipt_id,omitempty"`
 }
 
 type SignerRotationActivationAuditRetainedInventoryContinuityManifest struct {
